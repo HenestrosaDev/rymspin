@@ -29,6 +29,7 @@ DATA_DIR = Path(os.environ.get("RYM_RANDOM_HOME") or Path.home() / ".rym-random"
 PROFILE_DIR = DATA_DIR / "profile"
 CACHE_DIR = DATA_DIR / "cache"
 CACHE_TTL = 6 * 3600  # seconds a saved page is reused
+REQUEST_DELAY = 3  # seconds between page loads; quick bursts get the IP blocked
 
 
 class Fetcher:
@@ -43,6 +44,7 @@ class Fetcher:
         self.headless = headless
         self._pw = None
         self._ctx = None
+        self._last_request = 0.0
 
     def _launch(self, headless):
         if self._ctx is not None:
@@ -72,6 +74,10 @@ class Fetcher:
         if self._pw is None:
             self._pw = sync_playwright().start()
             self._launch(self.headless)
+        wait = self._last_request + REQUEST_DELAY - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        self._last_request = time.time()
         self._page.goto(url)
         # Wait for the Cloudflare challenge to clear. Headless waits briefly
         # and, if it doesn't pass, retries with a window (up to ~60 s, in case
@@ -86,6 +92,9 @@ class Fetcher:
                 self._launch(headless=False)
                 return self.get(url)
             sys.exit("Couldn't get past the Cloudflare protection.")
+        if "IP blocked" in self._page.title():
+            sys.exit("RYM has temporarily blocked your IP for loading too many pages. Wait a few hours "
+                     "(the block lifts by itself) and use fewer pages, e.g. fewer runs in a row.")
         self._page.wait_for_load_state("networkidle")
         return BeautifulSoup(self._page.content(), "html.parser")
 

@@ -176,6 +176,7 @@ Run `python rym_random.py --help` to see all the options.
 - **`Couldn't find the collection of '<user>'`**: the username is wrong or the collection isn't public. Check that `https://rateyourmusic.com/collection/<user>/r0.5-5.0` opens in your browser.
 - **`The collection is empty for that rating range.`**: the user hasn't rated any release in the range of `--min` and `--max`.
 - **`... is not a valid rating`**: ratings go from 0.5 to 5.0 in steps of 0.5, and `--min` can't be greater than `--max`.
+- **`RYM has temporarily blocked your IP`**: too many pages were loaded in a short time. The block lifts by itself after a few hours; until then, the script can only use the pages it already saved.
 - **Chrome doesn't open**: Playwright looks for Google Chrome in its default location. Make sure it's installed (Chromium or other browsers aren't used).
 
 <p align="right">(<a href="#top">back to top</a>)</p>
