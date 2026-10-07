@@ -134,3 +134,28 @@ def test_missing_collection_is_none_and_not_saved(cache_dir):
     fetcher = FakeFetcher("<html><body>Not found</body></html>")
     assert rym_random.Collection(fetcher, "https://x/c").page(1) is None
     assert not cache_dir.exists() or not any(cache_dir.iterdir())
+
+
+def test_choose_returns_different_releases():
+    picked = rym_random.choose([release(str(i)) for i in range(5)], 10)
+    assert sorted(titles(picked)) == ["0", "1", "2", "3", "4"]
+
+
+def test_all_rows_reads_every_page():
+    rows, requests, complete = rym_random.all_rows(FakeCollection(full_pages(3, last=4)), max_pages=5)
+    assert len(rows) == 54 and requests == 2 and complete
+
+
+def test_all_rows_stops_after_max_pages_and_skips_saved_pages():
+    collection = FakeCollection(full_pages(10), saved=[2, 3])
+    rows, requests, complete = rym_random.all_rows(collection, max_pages=2)
+    assert len(rows) == 5 * 25 and requests == 2 and not complete
+
+
+def test_shared_releases():
+    mine = [release("a", rating="4.00"), release("b")]
+    theirs = [release("a", rating="2.00"), release("c")]
+    shared = rym_random.shared_releases(mine, theirs, "other_user")
+    assert titles(shared) == ["a"]
+    assert shared[0]["other"] == {"user": "other_user", "rating": "2.00"}
+    assert rym_random.shared_weight(shared[0]) == (0.8 + 0.4) / 2

@@ -47,6 +47,7 @@
 - **Several picks**: pick any number of different releases at once.
 - **Weighted choice**: optionally make higher-rated releases more likely.
 - **No repeats**: optionally skip the releases picked in recent runs.
+- **Shared picks**: pick a release that two users have both rated in a range, e.g. to find something you both love.
 - **Output options**: JSON output, search links for Spotify, YouTube and Bandcamp, the cover, rating date and tags, and opening the picks in the browser.
 - **Uniform choice**: every release has the same probability of being picked, whatever page it's on.
 - **Few requests**: only about two pages are loaded on each run, instead of the whole collection, so it's fast and unlikely to get your IP blocked by RYM.
@@ -59,6 +60,8 @@ Rate Your Music is protected by Cloudflare, which blocks plain HTTP requests and
 To choose a release, it loads the first page to know how many pages the collection has (25 releases per page), picks a random page and a random position on it, and loads that page. If the position doesn't exist (which can only happen on the last page, as it's usually incomplete), it picks again. This way the choice is uniform without downloading every page.
 
 RYM can only limit the collection by rating, so the other filters (type, year, previous picks) are checked on each picked release: if it doesn't match, the script picks again, loading a new page when needed. This keeps the choice uniform, but a filter that few releases match needs many pages. RYM blocks your IP for a few hours if you load pages too quickly, so the script waits 3 seconds between pages and loads at most 5 pages per run by default (`--max-pages`). Pages saved by earlier runs don't count, so repeated runs find more and more matches.
+
+With `--with OTHER_USER`, it needs to know every release both users rated in the range, so it reads both collections whole instead. It still loads at most `--max-pages` pages per run: if the collections have more, it stops and the next run goes on from the saved pages. A high `--min` keeps the collections small, e.g. `--min 4.5` usually fits in a few pages.
 
 With `--weighted`, a picked release is kept with a probability of its rating divided by 5, so a 5.0 is twice as likely as a 2.5 and ten times as likely as a 0.5.
 
@@ -173,6 +176,9 @@ python rym_random.py example_user --details --links
 # Pick 3 releases as JSON and open them in the browser
 python rym_random.py example_user -n 3 --json --open
 
+# Pick a release that both users rated 4.5 or higher
+python rym_random.py example_user --with another_user --min 4.5
+
 # Always show the Chrome window
 python rym_random.py example_user --show
 ```
@@ -201,6 +207,7 @@ https://rateyourmusic.com/release/album/liars/mess/
 | `--links` | Also show search links for Spotify, YouTube and Bandcamp. | off |
 | `--json` | Print the picks as a JSON list, with every field (and the links with `--links`). | off |
 | `--open` | Open the picks on RYM in the web browser. | off |
+| `--with` | Only pick releases that this other user also rated within `--min` and `--max`. Both ratings are shown. | off |
 | `--show` | Always show the Chrome window. | off |
 | `--refresh` | Ignore the pages saved in the last 6 hours and load them again. | off |
 
@@ -218,6 +225,7 @@ Run `python rym_random.py --help` to see all the options.
 - **`... is not a valid rating`**: ratings go from 0.5 to 5.0 in steps of 0.5, and `--min` can't be greater than `--max`.
 - **`RYM has temporarily blocked your IP`**: too many pages were loaded in a short time. The block lifts by itself after a few hours; until then, the script can only use the pages it already saved. Use a lower `--max-pages`, or fewer filters, afterwards.
 - **`Stopped after loading N pages without finding enough releases`**: the filters match few releases. Run the script again later (the pages loaded so far are saved, so each run searches new ones) or raise `--max-pages` a little.
+- **`Loaded N more pages of the two collections, but they have more`**: with `--with`, both collections have to be read whole, which takes several runs if they are big. Run the same command again in a while, or use a higher `--min`.
 - **Chrome doesn't open**: Playwright looks for Google Chrome in its default location. Make sure it's installed (Chromium or other browsers aren't used).
 
 <p align="right">(<a href="#top">back to top</a>)</p>

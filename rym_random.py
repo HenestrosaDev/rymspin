@@ -5,7 +5,7 @@ Usage:
     python rym_random.py USER [--min 0.5] [--max 5.0] [-n 1] [--type album ep]
                               [--from 1970] [--to 1979] [--tag TAG] [--weighted]
                               [--no-repeat 50] [--details] [--links] [--json]
-                              [--open] [--show] [--refresh]
+                              [--open] [--with OTHER_USER] [--show] [--refresh]
 
 RYM is behind Cloudflare, so a real Chrome controlled with Playwright is used.
 The profile is stored in ~/.rym-random/profile/ (or $RYM_RANDOM_HOME) to reuse the Cloudflare cookie between
@@ -264,11 +264,7 @@ def pick(collection, count=1, match=None, weight=None, max_pages=MAX_PAGES):
             loaded = set(range(1, pages + 1))
         if len(loaded) >= pages:
             left = [r for n in sorted(loaded) for r in rows(n) if match(r) and r not in picked]
-            while left and len(picked) < count:
-                release = random.choices(left, [weight(r) for r in left])[0]
-                picked.append(release)
-                left.remove(release)
-            return picked, True
+            return picked + choose(left, count - len(picked), weight), True
         number = random.randint(1, pages)
         if number not in loaded:
             if not collection.is_available(number):
@@ -284,6 +280,50 @@ def pick(collection, count=1, match=None, weight=None, max_pages=MAX_PAGES):
         if release not in picked and match(release) and random.random() < weight(release):
             picked.append(release)
     return picked, True
+
+
+def choose(releases, count, weight=None):
+    """Pick up to `count` different releases from a list, by `weight` if given."""
+    weight = weight or (lambda release: 1.0)
+    left = list(releases)
+    picked = []
+    while left and len(picked) < count:
+        release = random.choices(left, [weight(r) for r in left])[0]
+        picked.append(release)
+        left.remove(release)
+    return picked
+
+
+def all_rows(collection, max_pages):
+    """Every release in the collection, loading at most `max_pages` pages from RYM.
+
+    Returns the releases, the number of pages loaded from RYM and whether
+    every page was read.
+    """
+    first = collection.page(1)
+    if first is None:
+        return [], 0, True
+    rows, requests = list(first[0]), 0
+    for number in range(2, first[1] + 1):
+        if not collection.is_available(number):
+            if requests >= max_pages:
+                return rows, requests, False
+            requests += 1
+        page = collection.page(number)
+        rows += page[0] if page else []
+    return rows, requests, True
+
+
+def shared_releases(mine, theirs, other_user):
+    """Releases in both lists, each with the other user's rating added."""
+    their_ratings = {r["url"]: r["rating"] for r in theirs}
+    return [dict(r, other={"user": other_user, "rating": their_ratings[r["url"]]})
+            for r in mine if r["url"] in their_ratings]
+
+
+def shared_weight(release):
+    """Weight of a shared release: the average of both users' rating weights."""
+    return (rating_weight(release) + rating_weight(release["other"])) / 2
 
 
 def rating_value(release):
@@ -345,6 +385,8 @@ def format_release(release, details=False, links=False):
     """Text shown for a picked release."""
     year = f" ({release['year']})" if release["year"] else ""
     lines = [f"{release['artist']} - {release['title']}{year}", f"Rating: {release['rating']}"]
+    if release.get("other"):
+        lines.append(f"Rating of {release['other']['user']}: {release['other']['rating']}")
     if details:
         lines.append(f"Type: {release_type(release)}")
         if release.get("rated"):
@@ -398,6 +440,8 @@ def main():
     parser.add_argument("--links", action="store_true", help="also show search links for Spotify, YouTube and Bandcamp")
     parser.add_argument("--json", action="store_true", help="print the picks as JSON")
     parser.add_argument("--open", action="store_true", help="open the picks on RYM in the web browser")
+    parser.add_argument("--with", dest="other_user", metavar="OTHER_USER",
+                        help="only pick releases that OTHER_USER also rated within --min and --max")
     parser.add_argument("--show", action="store_true", help="always show the browser window")
     parser.add_argument("--refresh", action="store_true", help="ignore the pages saved in the last hours and load them again")
     args = parser.parse_args()
@@ -430,7 +474,12 @@ def main():
             sys.exit(f"Couldn't find {what} '{args.user}' (wrong username, wrong tag or private collection?).")
         if not first[0]:
             sys.exit("The collection is empty for that rating range.")
-        picked, searched_all = pick(collection, args.count, match, rating_weight if args.weighted else None, args.max_pages)
+        if args.other_user:
+            picked = pick_shared(fetcher, collection, args, match)
+            searched_all = True
+        else:
+            picked, searched_all = pick(collection, args.count, match, rating_weight if args.weighted else None,
+                                        args.max_pages)
     finally:
         fetcher.close()
 
@@ -440,6 +489,8 @@ def main():
         else:
             reason = (f"Stopped after loading {args.max_pages} pages without finding enough releases that match "
                       "the filters; use --max-pages to search more.")
+        if not picked and args.other_user:
+            reason = f"No release rated by both '{args.user}' and '{args.other_user}' in that range matches the filters."
         if not picked:
             sys.exit(reason)
         print(reason, file=sys.stderr)
@@ -456,6 +507,26 @@ def main():
     if args.open:
         for choice in picked:
             webbrowser.open(choice["url"])
+
+
+
+def pick_shared(fetcher, collection, args, match):
+    """Pick releases both users rated, reading both collections whole.
+
+    Only --max-pages pages are loaded from RYM per run; when the collections
+    need more, it exits and the next run goes on from the saved pages.
+    """
+    other = Collection(fetcher, f"{BASE}/collection/{args.other_user}/r{args.min:.1f}-{args.max:.1f}", args.refresh)
+    if other.page(1) is None:
+        sys.exit(f"Couldn't find the collection of '{args.other_user}' (wrong username or private collection?).")
+    mine, used, mine_done = all_rows(collection, args.max_pages)
+    theirs, used_too, theirs_done = ([], 0, False) if not mine_done else all_rows(other, args.max_pages - used)
+    if not (mine_done and theirs_done):
+        sys.exit(f"Loaded {used + used_too} more pages of the two collections, but they have more. Run the same "
+                 "command again in a while to go on (loaded pages are saved for 6 hours), or use a higher --min "
+                 "to read fewer pages.")
+    shared = [r for r in shared_releases(mine, theirs, args.other_user) if match(r)]
+    return choose(shared, args.count, shared_weight if args.weighted else None)
 
 
 if __name__ == "__main__":
