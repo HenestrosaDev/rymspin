@@ -2,9 +2,9 @@ import json
 import sys
 
 import pytest
+from conftest import release
 
 import rymspin
-from conftest import FakeFetcher, release
 
 
 def test_search_links_drop_romanized_names():
@@ -32,7 +32,7 @@ def run(fetcher, monkeypatch, capsys):
     """Run main() with the given arguments against the fixture page."""
     monkeypatch.setattr(rymspin, "Fetcher", lambda headless: fetcher)
     fetcher.close = lambda: None
-    opened = []
+    opened: list[str] = []
     monkeypatch.setattr(rymspin.webbrowser, "open", opened.append)
 
     def run(*args):
@@ -46,14 +46,14 @@ def run(fetcher, monkeypatch, capsys):
 def test_main_prints_a_release(run, monkeypatch):
     # The fixture says there are 12 pages; make it a single one.
     monkeypatch.setattr(rymspin, "last_page", lambda soup: 1)
-    (out, err), opened = run()
+    (out, _), opened = run()
     assert out.splitlines()[1].startswith("Rating: ")
     assert opened == []
 
 
 def test_main_json_and_open(run, monkeypatch):
     monkeypatch.setattr(rymspin, "last_page", lambda soup: 1)
-    (out, err), opened = run("-n", "3", "--json", "--links", "--open")
+    (out, _), opened = run("-n", "3", "--json", "--links", "--open")
     picks = json.loads(out)
     assert sorted(p["title"] for p in picks) == ["First Record", "Split", "Unrated"]
     assert {p["type"] for p in picks} == {"album", "ep", "single"}
