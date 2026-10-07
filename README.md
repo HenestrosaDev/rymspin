@@ -60,7 +60,7 @@
 - **Output options**: JSON output, search links for Spotify, YouTube and Bandcamp, the cover, rating date and tags, and opening the picks in the browser.
 - **Uniform choice**: every release has the same probability of being picked, whatever page it's on.
 - **Few requests**: usually only about two pages are loaded on each run, instead of the whole collection, and never more than `--max-pages`, so it's fast and unlikely to get your IP blocked by RYM.
-- **Cache**: loaded pages are saved for 6 hours, so repeated runs are instant and don't even open Chrome.
+- **Cache**: loaded pages are saved for 6 hours, so repeated runs are instant and don't even open Chrome. `--history` never opens it.
 
 ### How It Works
 
@@ -68,7 +68,7 @@ Rate Your Music is protected by Cloudflare, which blocks plain HTTP requests and
 
 To choose a release, it loads the first page to know how many pages the collection has (25 releases per page), picks a random page and a random position on it, and loads that page. If the position doesn't exist (which can only happen on the last page, as it's usually incomplete), it picks again. This way the choice is uniform without downloading every page.
 
-RYM can only limit the collection by rating, so the other filters (type, year, previous picks) are checked on each picked release: if it doesn't match, the script picks again, loading a new page when needed. This keeps the choice uniform, but a filter that few releases match needs many pages. RYM blocks your IP for a few hours if you load pages too quickly, so the script waits 3 seconds between pages and loads at most 5 pages per run by default (`--max-pages`). Pages saved by earlier runs don't count, so repeated runs find more and more matches.
+RYM can only limit the collection by rating, so the other filters (type, year, rating date, previous picks) are checked on each picked release: if it doesn't match, the script picks again, loading a new page when needed. This keeps the choice uniform, but a filter that few releases match needs many pages. RYM blocks your IP for a few hours if you load pages too quickly, so the script waits 3 seconds between pages and loads at most 5 pages per run by default (`--max-pages`). Pages saved by earlier runs don't count, so repeated runs find more and more matches.
 
 With `--with OTHER_USER`, it needs to know every release both users rated in the range, so it reads both collections whole instead. It still loads at most `--max-pages` pages per run: if the collections have more, it stops and the next run goes on from the saved pages. A high `--min` keeps the collections small, e.g. `--min 4.5` usually fits in a few pages.
 
@@ -155,7 +155,7 @@ rymspin <user>
 - Chrome runs in the background without a window. If Cloudflare asks for a verification the headless browser can't pass, the script reopens Chrome with a visible window so you can tick the checkbox. Use `--show` to always show the window.
 - The Chrome profile is stored in `~/.rymspin/profile/`, so the Cloudflare session is reused between runs. Delete the folder to start from scratch. Set the `RYMSPIN_HOME` environment variable to use another folder.
 - The releases picked are saved in `~/.rymspin/history.json` (the last 1000 per user, each one once per day), which `--no-repeat` and `--history` use. Picks saved by earlier versions only have their link, so `--history` shows them without a date or title.
-- Loaded pages are saved in `~/.rymspin/cache/` and reused for 6 hours. Use `--refresh` to load them again, e.g. right after rating something new.
+- Loaded pages are saved in `~/.rymspin/cache/` and reused for 6 hours (7 days for your whole collection with `--new-from`). Use `--refresh` to load them again, e.g. right after rating something new.
 - Before the project was renamed to rymspin, its data was stored in `~/.rym-random/`. The first run moves it to `~/.rymspin/`, so you keep your Cloudflare session, cache and history. If you set `RYM_RANDOM_HOME`, rename it to `RYMSPIN_HOME`.
 - Earlier versions stored the profile in `.rym_profile/` inside the project folder. You can delete it, or move it to `~/.rymspin/profile/` to keep your Cloudflare session.
 - To run the tests, install the development dependencies with `pip install -r requirements-dev.txt` (or `pip install -e ".[dev]"`) and run `pytest`. They use a saved page in `tests/fixtures/`, so they don't connect to RYM. If RYM changes the markup of its collection pages, update the fixture and the tests will show what broke.
