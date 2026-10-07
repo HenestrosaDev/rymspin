@@ -2,7 +2,9 @@
 """Pick a random release from the ones a Rate Your Music user has rated.
 
 Usage:
-    python rym_random.py USER [--min 0.5] [--max 5.0] [--show]
+    python rym_random.py USER [--min 0.5] [--max 5.0] [-n 1] [--type album ep]
+                              [--from 1970] [--to 1979] [--tag TAG] [--weighted]
+                              [--no-repeat 50] [--show] [--refresh]
 
 RYM is behind Cloudflare, so a real Chrome controlled with Playwright is used.
 The profile is stored in ~/.rym-random/profile/ (or $RYM_RANDOM_HOME) to reuse the Cloudflare cookie between
@@ -19,6 +21,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
@@ -29,6 +32,11 @@ DATA_DIR = Path(os.environ.get("RYM_RANDOM_HOME") or Path.home() / ".rym-random"
 PROFILE_DIR = DATA_DIR / "profile"
 CACHE_DIR = DATA_DIR / "cache"
 CACHE_TTL = 6 * 3600  # seconds a saved page is reused
+HISTORY_FILE = DATA_DIR / "history.json"
+HISTORY_SIZE = 1000  # picks remembered per user
+MAX_PAGES = 5  # pages loaded from RYM at most per run when filters skip releases
+REQUEST_DELAY = 3  # seconds between page loads; quick bursts get the IP blocked
+RELEASE_TYPES = ["album", "ep", "single", "comp", "mixtape", "djmix", "musicvideo", "video", "additional", "bootleg", "unauth"]
 
 
 class Fetcher:
@@ -43,6 +51,7 @@ class Fetcher:
         self.headless = headless
         self._pw = None
         self._ctx = None
+        self._last_request = 0.0
 
     def _launch(self, headless):
         if self._ctx is not None:
@@ -72,6 +81,10 @@ class Fetcher:
         if self._pw is None:
             self._pw = sync_playwright().start()
             self._launch(self.headless)
+        wait = self._last_request + REQUEST_DELAY - time.time()
+        if wait > 0:
+            time.sleep(wait)
+        self._last_request = time.time()
         self._page.goto(url)
         # Wait for the Cloudflare challenge to clear. Headless waits briefly
         # and, if it doesn't pass, retries with a window (up to ~60 s, in case
@@ -86,6 +99,9 @@ class Fetcher:
                 self._launch(headless=False)
                 return self.get(url)
             sys.exit("Couldn't get past the Cloudflare protection.")
+        if "IP blocked" in self._page.title():
+            sys.exit("RYM has temporarily blocked your IP for loading too many pages. Wait a few hours "
+                     "(the block lifts by itself) and use fewer pages, e.g. a lower --max-pages.")
         self._page.wait_for_load_state("networkidle")
         return BeautifulSoup(self._page.content(), "html.parser")
 
@@ -108,19 +124,37 @@ class Collection:
     def page(self, number):
         """Return (rows, last page number), or None if the collection doesn't exist."""
         if number not in self._pages:
-            self._pages[number] = self._load(number)
+            self._pages[number] = self._saved(number) or self._load(number)
         return self._pages[number]
 
+    def is_available(self, number):
+        """Whether the page can be returned without loading it from RYM."""
+        if number not in self._pages:
+            saved = self._saved(number)
+            if saved is None:
+                return False
+            self._pages[number] = saved
+        return True
+
+    def _url(self, number):
+        return self.url if number == 1 else f"{self.url.rstrip('/')}/{number}"
+
+    def _path(self, number):
+        return CACHE_DIR / (hashlib.sha1(self._url(number).encode()).hexdigest() + ".json")
+
+    def _saved(self, number):
+        if self.refresh:
+            return None
+        try:
+            saved = json.loads(self._path(number).read_text())
+            if time.time() - saved["time"] < CACHE_TTL:
+                return saved["rows"], saved["pages"]
+        except (OSError, ValueError, KeyError):
+            pass
+        return None
+
     def _load(self, number):
-        url = self.url if number == 1 else f"{self.url}/{number}"
-        path = CACHE_DIR / (hashlib.sha1(url.encode()).hexdigest() + ".json")
-        if not self.refresh:
-            try:
-                saved = json.loads(path.read_text())
-                if time.time() - saved["time"] < CACHE_TTL:
-                    return saved["rows"], saved["pages"]
-            except (OSError, ValueError, KeyError):
-                pass
+        url, path = self._url(number), self._path(number)
         soup = self.fetcher.get(url)
         if soup.find("table", class_="mbgen") is None:
             return None
@@ -160,20 +194,116 @@ def last_page(soup):
     return max(nums, default=1)
 
 
-def random_release(collection):
-    """Pick a release uniformly at random from the collection.
+def release_type(release):
+    """Type of a release (album, ep, single, comp...), taken from its URL."""
+    return release["url"][len(BASE):].split("/")[2]
+
+
+def pick(collection, count=1, match=None, weight=None, max_pages=MAX_PAGES):
+    """Pick up to `count` different releases at random from the collection.
 
     Picks a random page and position; if the position doesn't exist (only
-    possible on the last page, which is incomplete), it picks again. Only the
-    pages that are picked get loaded.
+    possible on the last page, which is incomplete), the release doesn't pass
+    `match`, it's already picked or it loses the `weight` draw (a probability
+    from 0 to 1), it picks again. This keeps the choice uniform (or weighted)
+    while only loading the pages that are picked. Once every page is loaded,
+    it picks directly among the releases left.
+
+    Returns the picks and whether the whole collection was searched; if it
+    wasn't, the search stopped after loading `max_pages` pages from RYM (pages
+    saved by earlier runs don't count).
     """
+    match = match or (lambda release: True)
+    weight = weight or (lambda release: 1.0)
+
+    def rows(number):
+        page = collection.page(number)
+        return page[0] if page else []
+
     pages = collection.page(1)[1]
-    while True:
-        page = collection.page(random.randint(1, pages))
-        rows = page[0] if page else []
+    loaded = {1}
+    requests = 0
+    picked = []
+    while len(picked) < count:
+        if len(loaded) < pages and all(collection.is_available(n) for n in range(1, pages + 1)):
+            loaded = set(range(1, pages + 1))
+        if len(loaded) >= pages:
+            left = [r for n in sorted(loaded) for r in rows(n) if match(r) and r not in picked]
+            while left and len(picked) < count:
+                release = random.choices(left, [weight(r) for r in left])[0]
+                picked.append(release)
+                left.remove(release)
+            return picked, True
+        number = random.randint(1, pages)
+        if number not in loaded:
+            if not collection.is_available(number):
+                if requests >= max_pages:
+                    return picked, False
+                requests += 1
+            loaded.add(number)
+        page_rows = rows(number)
         slot = random.randrange(PER_PAGE)
-        if slot < len(rows):
-            return rows[slot]
+        if slot >= len(page_rows):
+            continue
+        release = page_rows[slot]
+        if release not in picked and match(release) and random.random() < weight(release):
+            picked.append(release)
+    return picked, True
+
+
+def rating_value(release):
+    """Rating of a release as a number, or None if it's unknown."""
+    try:
+        return float(release["rating"])
+    except ValueError:
+        return None
+
+
+def rating_weight(release):
+    """Probability of keeping a release when picking weighted by rating."""
+    return (rating_value(release) or 0.5) / 5
+
+
+def filters(types=None, year_from=None, year_to=None, min_rating=None, max_rating=None, skip=()):
+    """Build the `match` function of pick() from the command-line filters."""
+    skip = set(skip)
+
+    def match(release):
+        if release["url"] in skip:
+            return False
+        if types and release_type(release) not in types:
+            return False
+        if year_from is not None or year_to is not None:
+            if not release["year"].isdigit():
+                return False
+            year = int(release["year"])
+            if year_from is not None and year < year_from or year_to is not None and year > year_to:
+                return False
+        if min_rating is not None or max_rating is not None:
+            value = rating_value(release)
+            if value is None or min_rating is not None and value < min_rating or max_rating is not None and value > max_rating:
+                return False
+        return True
+
+    return match
+
+
+def load_history():
+    try:
+        return json.loads(HISTORY_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save_history(history, user, releases):
+    """Add the picked releases to the user's history, keeping the last HISTORY_SIZE."""
+    key = user.lower()
+    history[key] = (history.get(key, []) + [r["url"] for r in releases])[-HISTORY_SIZE:]
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        HISTORY_FILE.write_text(json.dumps(history, indent=1))
+    except OSError:
+        pass
 
 
 def rating(value):
@@ -187,34 +317,84 @@ def rating(value):
     return r
 
 
+def positive(value):
+    """argparse type for an integer greater than 0."""
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a whole number")
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"{value} must be 1 or more")
+    return n
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("user", help="RYM username")
     parser.add_argument("--min", type=rating, default=0.5, help="minimum rating (default 0.5)")
     parser.add_argument("--max", type=rating, default=5.0, help="maximum rating (default 5.0)")
+    parser.add_argument("-n", "--count", type=positive, default=1, help="number of different releases to pick (default 1)")
+    parser.add_argument("--type", nargs="+", metavar="TYPE", help=f"only pick these release types ({', '.join(RELEASE_TYPES)})")
+    parser.add_argument("--from", dest="year_from", type=int, metavar="YEAR", help="only pick releases from this year or later")
+    parser.add_argument("--to", dest="year_to", type=int, metavar="YEAR", help="only pick releases from this year or earlier")
+    parser.add_argument("--tag", help="only pick releases the user tagged with this tag")
+    parser.add_argument("--weighted", action="store_true", help="make higher-rated releases more likely to be picked")
+    parser.add_argument("--no-repeat", type=positive, metavar="N", help="skip the last N releases picked for this user")
+    parser.add_argument("--max-pages", type=positive, default=MAX_PAGES, help=f"pages to load at most when filters skip releases (default {MAX_PAGES})")
     parser.add_argument("--show", action="store_true", help="always show the browser window")
     parser.add_argument("--refresh", action="store_true", help="ignore the pages saved in the last hours and load them again")
     args = parser.parse_args()
     if args.min > args.max:
         parser.error(f"--min ({args.min}) can't be greater than --max ({args.max})")
+    if args.year_from is not None and args.year_to is not None and args.year_from > args.year_to:
+        parser.error(f"--from ({args.year_from}) can't be later than --to ({args.year_to})")
+    types = {t.lower() for t in args.type} if args.type else None
+    if types and types - set(RELEASE_TYPES):
+        parser.error(f"unknown release type: {', '.join(sorted(types - set(RELEASE_TYPES)))} (use {', '.join(RELEASE_TYPES)})")
+
+    history = load_history()
+    skip = history.get(args.user.lower(), [])[-args.no_repeat:] if args.no_repeat else ()
+    if args.tag:
+        # Tag pages can't be limited to a rating range, so the range is checked
+        # on each release instead.
+        url = f"{BASE}/collection/{args.user}/stag/{quote_plus(args.tag.lower())}/"
+        ratings = (args.min, args.max) if (args.min, args.max) != (0.5, 5.0) else (None, None)
+    else:
+        url = f"{BASE}/collection/{args.user}/r{args.min:.1f}-{args.max:.1f}"
+        ratings = (None, None)
+    match = filters(types, args.year_from, args.year_to, *ratings, skip=skip)
 
     fetcher = Fetcher(headless=not args.show)
-    collection = Collection(fetcher, f"{BASE}/collection/{args.user}/r{args.min:.1f}-{args.max:.1f}", args.refresh)
+    collection = Collection(fetcher, url, args.refresh)
     try:
         first = collection.page(1)
         if first is None:
-            sys.exit(f"Couldn't find the collection of '{args.user}' (wrong username or private collection?).")
+            what = f"releases tagged '{args.tag}' by" if args.tag else "the collection of"
+            sys.exit(f"Couldn't find {what} '{args.user}' (wrong username, wrong tag or private collection?).")
         if not first[0]:
             sys.exit("The collection is empty for that rating range.")
-        choice = random_release(collection)
+        picked, searched_all = pick(collection, args.count, match, rating_weight if args.weighted else None, args.max_pages)
     finally:
         fetcher.close()
 
-    year = f" ({choice['year']})" if choice["year"] else ""
-    print(f"{choice['artist']} - {choice['title']}{year}")
-    print(f"Rating: {choice['rating']}")
-    print(choice["url"])
+    if len(picked) < args.count:
+        if searched_all:
+            reason = "No release matches the filters." if not picked else f"Only {len(picked)} releases match the filters."
+        else:
+            reason = (f"Stopped after loading {args.max_pages} pages without finding enough releases that match "
+                      "the filters; use --max-pages to search more.")
+        if not picked:
+            sys.exit(reason)
+        print(reason, file=sys.stderr)
+    save_history(history, args.user, picked)
 
+    for i, choice in enumerate(picked):
+        if i:
+            print()
+        year = f" ({choice['year']})" if choice["year"] else ""
+        print(f"{choice['artist']} - {choice['title']}{year}")
+        print(f"Rating: {choice['rating']}")
+        print(choice["url"])
 
 if __name__ == "__main__":
     main()
