@@ -45,6 +45,7 @@
 - **Rating filter**: limit the choice to a range of ratings, e.g. only the releases rated 4.5 or higher.
 - **Uniform choice**: every release has the same probability of being picked, whatever page it's on.
 - **Few requests**: only about two pages are loaded on each run, instead of the whole collection, so it's fast and unlikely to get your IP blocked by RYM.
+- **Cache**: loaded pages are saved for 6 hours, so repeated runs are instant and don't even open Chrome.
 
 ### How It Works
 
@@ -69,7 +70,9 @@ To choose a release, it loads the first page to know how many pages the collecti
   │   rym_random.py
   │
   └───tests/
+      │   conftest.py
       │   test_parsing.py
+      │   test_sampling.py
       │
       └───fixtures/
               collection.html
@@ -120,6 +123,7 @@ rym-random <user>
 
 - Chrome runs in the background without a window. If Cloudflare asks for a verification the headless browser can't pass, the script reopens Chrome with a visible window so you can tick the checkbox. Use `--show` to always show the window.
 - The Chrome profile is stored in `~/.rym-random/profile/`, so the Cloudflare session is reused between runs. Delete the folder to start from scratch. Set the `RYM_RANDOM_HOME` environment variable to use another folder.
+- Loaded pages are saved in `~/.rym-random/cache/` and reused for 6 hours. Use `--refresh` to load them again, e.g. right after rating something new.
 - Earlier versions stored the profile in `.rym_profile/` inside the project folder. You can delete it, or move it to `~/.rym-random/profile/` to keep your Cloudflare session.
 - To run the tests, install the development dependencies with `pip install -r requirements-dev.txt` (or `pip install -e ".[dev]"`) and run `pytest`. They use a saved page in `tests/fixtures/`, so they don't connect to RYM. If RYM changes the markup of its collection pages, update the fixture and the tests will show what broke.
 - The collection includes every type of release the user has rated, not only albums, so EPs, singles, compilations, etc. can also be picked.
@@ -158,6 +162,7 @@ https://rateyourmusic.com/release/album/liars/mess/
 | `--min` | Minimum rating. | `0.5` |
 | `--max` | Maximum rating. | `5.0` |
 | `--show` | Always show the Chrome window. | off |
+| `--refresh` | Ignore the pages saved in the last 6 hours and load them again. | off |
 
 Run `python rym_random.py --help` to see all the options.
 
