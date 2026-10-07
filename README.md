@@ -128,7 +128,7 @@ Example output:
 
 ```
 Liars - Mess (2014)
-Nota: 1.50
+Rating: 1.50
 https://rateyourmusic.com/release/album/liars/mess/
 ```
 
@@ -137,6 +137,7 @@ https://rateyourmusic.com/release/album/liars/mess/
 | `user` | RYM username. | (required) |
 | `--min` | Minimum rating. | `0.5` |
 | `--max` | Maximum rating. | `5.0` |
+| `--show` | Always show the Chrome window. | off |
 
 Run `python rym_random.py --help` to see all the options.
 
@@ -146,9 +147,10 @@ Run `python rym_random.py --help` to see all the options.
 
 ## Troubleshooting
 
-- **`No se pudo superar la protección de Cloudflare.`**: the Cloudflare check didn't pass in 60 seconds. If a Chrome window opens and shows a "Verify you are human" checkbox, tick it while the script waits. If it keeps failing, delete `.rym_profile/` and try again.
-- **`No se encontró la colección de '<user>'`**: the username is wrong or the collection isn't public. Check that `https://rateyourmusic.com/collection/<user>/r0.5-5.0` opens in your browser.
-- **`La colección está vacía para ese rango de notas.`**: the user hasn't rated any release in the range of `--min` and `--max`.
+- **`Couldn't get past the Cloudflare protection.`**: the Cloudflare check didn't pass in 60 seconds. If a Chrome window opens and shows a "Verify you are human" checkbox, tick it while the script waits. If it keeps failing, delete `.rym_profile/` and try again.
+- **`Couldn't find the collection of '<user>'`**: the username is wrong or the collection isn't public. Check that `https://rateyourmusic.com/collection/<user>/r0.5-5.0` opens in your browser.
+- **`The collection is empty for that rating range.`**: the user hasn't rated any release in the range of `--min` and `--max`.
+- **`... is not a valid rating`**: ratings go from 0.5 to 5.0 in steps of 0.5, and `--min` can't be greater than `--max`.
 - **Chrome doesn't open**: Playwright looks for Google Chrome in its default location. Make sure it's installed (Chromium or other browsers aren't used).
 
 <p align="right">(<a href="#top">back to top</a>)</p>

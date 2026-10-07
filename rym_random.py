@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Elige un álbum al azar entre los puntuados por un usuario de RateYourMusic.
+"""Pick a random release from the ones a Rate Your Music user has rated.
 
-Uso:
-    python rym_random.py USUARIO [--min 0.5] [--max 5.0] [--show]
+Usage:
+    python rym_random.py USER [--min 0.5] [--max 5.0] [--show]
 
-RYM está detrás de Cloudflare, así que se usa un Chrome real controlado con
-Playwright. El perfil se guarda en .rym_profile/ para reutilizar la cookie de
-Cloudflare entre ejecuciones. El navegador corre sin ventana; solo se abre una
-si Cloudflare pide verificación (o con --show).
+RYM is behind Cloudflare, so a real Chrome controlled with Playwright is used.
+The profile is stored in .rym_profile/ to reuse the Cloudflare cookie between
+runs. The browser runs without a window; one only opens if Cloudflare asks for
+a verification (or with --show).
 """
 
 import argparse
@@ -25,10 +25,10 @@ PROFILE_DIR = Path(__file__).resolve().parent / ".rym_profile"
 
 
 class Fetcher:
-    """Navegador Chrome con perfil persistente.
+    """Chrome browser with a persistent profile.
 
-    Arranca en modo headless; si Cloudflare no deja pasar, se reabre con
-    ventana visible para poder resolver el desafío a mano.
+    Starts headless; if Cloudflare doesn't let it through, it reopens with a
+    visible window so the challenge can be solved by hand.
     """
 
     def __init__(self, headless=True):
@@ -48,8 +48,8 @@ class Fetcher:
         )
         self._ctx = self._pw.chromium.launch_persistent_context(PROFILE_DIR, **opts)
         if headless:
-            # El user agent en headless contiene "HeadlessChrome", que Cloudflare
-            # detecta y que invalida la cookie obtenida con ventana visible.
+            # The headless user agent contains "HeadlessChrome", which Cloudflare
+            # detects and which invalidates the cookie obtained with a window.
             ua = self._new_page().evaluate("navigator.userAgent")
             if "HeadlessChrome" in ua:
                 self._ctx.close()
@@ -62,19 +62,19 @@ class Fetcher:
 
     def get(self, url):
         self._page.goto(url)
-        # Esperar a que se resuelva el desafío de Cloudflare. En headless se
-        # espera poco y, si no pasa, se reintenta con ventana (hasta ~60 s, por
-        # si hay que marcar la casilla a mano).
+        # Wait for the Cloudflare challenge to clear. Headless waits briefly
+        # and, if it doesn't pass, retries with a window (up to ~60 s, in case
+        # the checkbox has to be ticked by hand).
         for _ in range(10 if self.headless else 60):
             if "Just a moment" not in self._page.title():
                 break
             self._page.wait_for_timeout(1000)
         else:
             if self.headless:
-                print("Cloudflare pide verificación; abriendo ventana...", file=sys.stderr)
+                print("Cloudflare asks for a verification; opening a window...", file=sys.stderr)
                 self._launch(headless=False)
                 return self.get(url)
-            sys.exit("No se pudo superar la protección de Cloudflare.")
+            sys.exit("Couldn't get past the Cloudflare protection.")
         self._page.wait_for_load_state("networkidle")
         return BeautifulSoup(self._page.content(), "html.parser")
 
@@ -110,32 +110,45 @@ def last_page(soup):
     return max(nums, default=1)
 
 
+def rating(value):
+    """argparse type for a RYM rating: 0.5 to 5.0 in steps of 0.5."""
+    try:
+        r = float(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a number")
+    if not 0.5 <= r <= 5.0 or r * 2 != int(r * 2):
+        raise argparse.ArgumentTypeError(f"{value} is not a valid rating (0.5 to 5.0 in steps of 0.5)")
+    return r
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("user", help="nombre de usuario de RYM")
-    parser.add_argument("--min", type=float, default=0.5, help="nota mínima (por defecto 0.5)")
-    parser.add_argument("--max", type=float, default=5.0, help="nota máxima (por defecto 5.0)")
-    parser.add_argument("--show", action="store_true", help="mostrar siempre la ventana del navegador")
+    parser.add_argument("user", help="RYM username")
+    parser.add_argument("--min", type=rating, default=0.5, help="minimum rating (default 0.5)")
+    parser.add_argument("--max", type=rating, default=5.0, help="maximum rating (default 5.0)")
+    parser.add_argument("--show", action="store_true", help="always show the browser window")
     args = parser.parse_args()
+    if args.min > args.max:
+        parser.error(f"--min ({args.min}) can't be greater than --max ({args.max})")
 
     collection = f"{BASE}/collection/{args.user}/r{args.min:.1f}-{args.max:.1f}"
     fetcher = Fetcher(headless=not args.show)
     try:
         first = fetcher.get(collection)
         if first.find("table", class_="mbgen") is None:
-            sys.exit(f"No se encontró la colección de '{args.user}' (¿usuario correcto o colección privada?).")
-        pages = last_page(first)
+            sys.exit(f"Couldn't find the collection of '{args.user}' (wrong username or private collection?).")
         cache = {1: parse_rows(first)}
+        if not cache[1]:
+            sys.exit("The collection is empty for that rating range.")
+        pages = last_page(first)
 
-        # Muestreo uniforme: página y posición al azar; si la posición no existe
-        # (solo puede pasar en la última página, que está incompleta), se repite.
+        # Uniform sampling: random page and position; if the position doesn't
+        # exist (only possible on the last page, which is incomplete), retry.
         while True:
             page = random.randint(1, pages)
             slot = random.randrange(PER_PAGE)
             if page not in cache:
                 cache[page] = parse_rows(fetcher.get(f"{collection}/{page}"))
-            if not cache[page]:
-                sys.exit("La colección está vacía para ese rango de notas.")
             if slot < len(cache[page]):
                 choice = cache[page][slot]
                 break
@@ -144,9 +157,8 @@ def main():
 
     year = f" ({choice['year']})" if choice["year"] else ""
     print(f"{choice['artist']} - {choice['title']}{year}")
-    print(f"Nota: {choice['rating']}")
+    print(f"Rating: {choice['rating']}")
     print(choice["url"])
-
 
 if __name__ == "__main__":
     main()
