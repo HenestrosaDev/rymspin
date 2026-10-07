@@ -63,7 +63,14 @@ To choose a release, it loads the first page to know how many pages the collecti
   │   LICENSE
   │   README.md
   │   requirements.txt
+  │   requirements-dev.txt
   │   rym_random.py
+  │
+  ├───tests/
+  │   │   test_parsing.py
+  │   │
+  │   └───fixtures/
+  │           collection.html
   │
   └───.rym_profile/ (Chrome profile with the Cloudflare session, created on the first run)
   ```
@@ -102,6 +109,7 @@ To choose a release, it loads the first page to know how many pages the collecti
 
 - Chrome runs in the background without a window. If Cloudflare asks for a verification the headless browser can't pass, the script reopens Chrome with a visible window so you can tick the checkbox. Use `--show` to always show the window.
 - The Chrome profile is stored in `.rym_profile/`, so the Cloudflare session is reused between runs. Delete the folder to start from scratch.
+- To run the tests, install the development dependencies with `pip install -r requirements-dev.txt` and run `pytest`. They use a saved page in `tests/fixtures/`, so they don't connect to RYM. If RYM changes the markup of its collection pages, update the fixture and the tests will show what broke.
 - The collection includes every type of release the user has rated, not only albums, so EPs, singles, compilations, etc. can also be picked.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
