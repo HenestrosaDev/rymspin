@@ -4,7 +4,8 @@
 Usage:
     python rym_random.py USER [--min 0.5] [--max 5.0] [-n 1] [--type album ep]
                               [--from 1970] [--to 1979] [--tag TAG] [--weighted]
-                              [--no-repeat 50] [--show] [--refresh]
+                              [--no-repeat 50] [--details] [--links] [--json]
+                              [--open] [--show] [--refresh]
 
 RYM is behind Cloudflare, so a real Chrome controlled with Playwright is used.
 The profile is stored in ~/.rym-random/profile/ (or $RYM_RANDOM_HOME) to reuse the Cloudflare cookie between
@@ -20,8 +21,9 @@ import random
 import re
 import sys
 import time
+import webbrowser
 from pathlib import Path
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
@@ -32,6 +34,7 @@ DATA_DIR = Path(os.environ.get("RYM_RANDOM_HOME") or Path.home() / ".rym-random"
 PROFILE_DIR = DATA_DIR / "profile"
 CACHE_DIR = DATA_DIR / "cache"
 CACHE_TTL = 6 * 3600  # seconds a saved page is reused
+CACHE_VERSION = 2  # change when parse_rows() returns different fields
 HISTORY_FILE = DATA_DIR / "history.json"
 HISTORY_SIZE = 1000  # picks remembered per user
 MAX_PAGES = 5  # pages loaded from RYM at most per run when filters skip releases
@@ -140,7 +143,8 @@ class Collection:
         return self.url if number == 1 else f"{self.url.rstrip('/')}/{number}"
 
     def _path(self, number):
-        return CACHE_DIR / (hashlib.sha1(self._url(number).encode()).hexdigest() + ".json")
+        key = f"{CACHE_VERSION} {self._url(number)}"
+        return CACHE_DIR / (hashlib.sha1(key.encode()).hexdigest() + ".json")
 
     def _saved(self, number):
         if self.refresh:
@@ -179,14 +183,45 @@ def parse_rows(soup):
             continue
         rating = row.select_one("td.or_q_rating_date_s img")
         year = row.select_one("div.or_q_albumartist span.smallgray")
+        cover = row.select_one("td.or_q_thumb_album img")
         albums.append({
             "artist": " & ".join(a.get_text(" ", strip=True) for a in artists) or "?",
             "title": album.get_text(" ", strip=True),
             "year": year.get_text(strip=True).strip("()") if year else "",
             "rating": rating["title"].replace(" stars", "") if rating else "?",
             "url": BASE + album["href"],
+            "cover": "https:" + cover["src"] if cover and cover.get("src", "").startswith("//") else
+                     (cover.get("src", "") if cover else ""),
+            "rated": rated_date(row),
+            "tags": [a.get_text(" ", strip=True) for a in row.select("div.or_q_tagcloud a")],
         })
     return albums
+
+
+MONTHS = {m: i for i, m in enumerate(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
+
+
+def rated_date(row):
+    """Date the release was rated, as YYYY-MM-DD, or "" if it's not shown."""
+    parts = [row.select_one(f"div.date_element_{p}") for p in ("year", "month", "day")]
+    if not all(parts):
+        return ""
+    year, month, day = (p.get_text(strip=True) for p in parts)
+    if month not in MONTHS or not year.isdigit() or not day.isdigit():
+        return ""
+    return f"{year}-{MONTHS[month]:02d}-{int(day):02d}"
+
+
+def search_links(release):
+    """Search URLs for the release on streaming and shopping sites."""
+    # Drop the romanized names RYM adds in brackets, e.g. "박지하 [Park Jiha]".
+    artist = re.sub(r"\s*\[[^\]]*\]", "", release["artist"])
+    query = f"{artist} {release['title']}".strip()
+    return {
+        "spotify": f"https://open.spotify.com/search/{quote(query)}",
+        "youtube": f"https://www.youtube.com/results?search_query={quote_plus(query)}",
+        "bandcamp": f"https://bandcamp.com/search?q={quote_plus(query)}",
+    }
 
 
 def last_page(soup):
@@ -306,6 +341,24 @@ def save_history(history, user, releases):
         pass
 
 
+def format_release(release, details=False, links=False):
+    """Text shown for a picked release."""
+    year = f" ({release['year']})" if release["year"] else ""
+    lines = [f"{release['artist']} - {release['title']}{year}", f"Rating: {release['rating']}"]
+    if details:
+        lines.append(f"Type: {release_type(release)}")
+        if release.get("rated"):
+            lines.append(f"Rated on: {release['rated']}")
+        if release.get("tags"):
+            lines.append(f"Tags: {', '.join(release['tags'])}")
+        if release.get("cover"):
+            lines.append(f"Cover: {release['cover']}")
+    lines.append(release["url"])
+    if links:
+        names = {"spotify": "Spotify", "youtube": "YouTube", "bandcamp": "Bandcamp"}
+        lines += [f"{names[site]}: {url}" for site, url in search_links(release).items()]
+    return "\n".join(lines)
+
 def rating(value):
     """argparse type for a RYM rating: 0.5 to 5.0 in steps of 0.5."""
     try:
@@ -341,6 +394,10 @@ def main():
     parser.add_argument("--weighted", action="store_true", help="make higher-rated releases more likely to be picked")
     parser.add_argument("--no-repeat", type=positive, metavar="N", help="skip the last N releases picked for this user")
     parser.add_argument("--max-pages", type=positive, default=MAX_PAGES, help=f"pages to load at most when filters skip releases (default {MAX_PAGES})")
+    parser.add_argument("--details", action="store_true", help="also show the cover, the date it was rated and the tags")
+    parser.add_argument("--links", action="store_true", help="also show search links for Spotify, YouTube and Bandcamp")
+    parser.add_argument("--json", action="store_true", help="print the picks as JSON")
+    parser.add_argument("--open", action="store_true", help="open the picks on RYM in the web browser")
     parser.add_argument("--show", action="store_true", help="always show the browser window")
     parser.add_argument("--refresh", action="store_true", help="ignore the pages saved in the last hours and load them again")
     args = parser.parse_args()
@@ -379,7 +436,7 @@ def main():
 
     if len(picked) < args.count:
         if searched_all:
-            reason = "No release matches the filters." if not picked else f"Only {len(picked)} releases match the filters."
+            reason = "No release matches the filters." if not picked else (f"Only {len(picked)} releases match the filters." if len(picked) > 1 else "Only 1 release matches the filters.")
         else:
             reason = (f"Stopped after loading {args.max_pages} pages without finding enough releases that match "
                       "the filters; use --max-pages to search more.")
@@ -388,13 +445,18 @@ def main():
         print(reason, file=sys.stderr)
     save_history(history, args.user, picked)
 
-    for i, choice in enumerate(picked):
-        if i:
-            print()
-        year = f" ({choice['year']})" if choice["year"] else ""
-        print(f"{choice['artist']} - {choice['title']}{year}")
-        print(f"Rating: {choice['rating']}")
-        print(choice["url"])
+    if args.json:
+        output = [dict(r, type=release_type(r), **({"links": search_links(r)} if args.links else {})) for r in picked]
+        print(json.dumps(output, ensure_ascii=False, indent=2))
+    else:
+        for i, choice in enumerate(picked):
+            if i:
+                print()
+            print(format_release(choice, args.details, args.links))
+    if args.open:
+        for choice in picked:
+            webbrowser.open(choice["url"])
+
 
 if __name__ == "__main__":
     main()

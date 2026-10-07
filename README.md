@@ -47,6 +47,7 @@
 - **Several picks**: pick any number of different releases at once.
 - **Weighted choice**: optionally make higher-rated releases more likely.
 - **No repeats**: optionally skip the releases picked in recent runs.
+- **Output options**: JSON output, search links for Spotify, YouTube and Bandcamp, the cover, rating date and tags, and opening the picks in the browser.
 - **Uniform choice**: every release has the same probability of being picked, whatever page it's on.
 - **Few requests**: only about two pages are loaded on each run, instead of the whole collection, so it's fast and unlikely to get your IP blocked by RYM.
 - **Cache**: loaded pages are saved for 6 hours, so repeated runs are instant and don't even open Chrome.
@@ -79,6 +80,7 @@ With `--weighted`, a picked release is kept with a probability of its rating div
   │
   └───tests/
       │   conftest.py
+      │   test_output.py
       │   test_parsing.py
       │   test_sampling.py
       │
@@ -165,6 +167,12 @@ python rym_random.py example_user --tag night --min 4
 # Prefer higher-rated releases and skip the last 50 picks
 python rym_random.py example_user --weighted --no-repeat 50
 
+# Show the cover, date and tags, and search links to listen to it
+python rym_random.py example_user --details --links
+
+# Pick 3 releases as JSON and open them in the browser
+python rym_random.py example_user -n 3 --json --open
+
 # Always show the Chrome window
 python rym_random.py example_user --show
 ```
@@ -189,6 +197,10 @@ https://rateyourmusic.com/release/album/liars/mess/
 | `--weighted` | Make higher-rated releases more likely to be picked. | off |
 | `--no-repeat` | Skip the last N releases picked for this user. | off |
 | `--max-pages` | Pages to load from RYM at most when filters skip releases. | `5` |
+| `--details` | Also show the release type, the date it was rated, the user's tags and the cover. | off |
+| `--links` | Also show search links for Spotify, YouTube and Bandcamp. | off |
+| `--json` | Print the picks as a JSON list, with every field (and the links with `--links`). | off |
+| `--open` | Open the picks on RYM in the web browser. | off |
 | `--show` | Always show the Chrome window. | off |
 | `--refresh` | Ignore the pages saved in the last 6 hours and load them again. | off |
 
