@@ -47,7 +47,7 @@
 
 ### How It Works
 
-Rate Your Music is protected by Cloudflare, which blocks plain HTTP requests and headless browsers. The script opens your installed Google Chrome with [Playwright](https://playwright.dev/python/), waits for the Cloudflare check to pass and reads the collection pages.
+Rate Your Music is protected by Cloudflare, which blocks plain HTTP requests and detects most headless browsers. The script runs your installed Google Chrome headless with [Playwright](https://playwright.dev/python/), using a regular Chrome user agent, waits for the Cloudflare check to pass and reads the collection pages.
 
 To choose a release, it loads the first page to know how many pages the collection has (25 releases per page), picks a random page and a random position on it, and loads that page. If the position doesn't exist (which can only happen on the last page, as it's usually incomplete), it picks again. This way the choice is uniform without downloading every page.
 
@@ -100,7 +100,7 @@ To choose a release, it loads the first page to know how many pages the collecti
 
 ### Notes
 
-- A Chrome window opens while the script runs and closes when it finishes. It can't be hidden, because Cloudflare blocks headless browsers.
+- Chrome runs in the background without a window. If Cloudflare asks for a verification the headless browser can't pass, the script reopens Chrome with a visible window so you can tick the checkbox. Use `--show` to always show the window.
 - The Chrome profile is stored in `.rym_profile/`, so the Cloudflare session is reused between runs. Delete the folder to start from scratch.
 - The collection includes every type of release the user has rated, not only albums, so EPs, singles, compilations, etc. can also be picked.
 
@@ -119,6 +119,9 @@ python rym_random.py example_user --min 4.5
 
 # Pick only from the releases rated between 1 and 2.5
 python rym_random.py example_user --min 1 --max 2.5
+
+# Always show the Chrome window
+python rym_random.py example_user --show
 ```
 
 Example output:
@@ -143,7 +146,7 @@ Run `python rym_random.py --help` to see all the options.
 
 ## Troubleshooting
 
-- **`No se pudo superar la protección de Cloudflare.`**: the Cloudflare check didn't pass in 60 seconds. If the Chrome window shows a "Verify you are human" checkbox, tick it while the script waits. If it keeps failing, delete `.rym_profile/` and try again.
+- **`No se pudo superar la protección de Cloudflare.`**: the Cloudflare check didn't pass in 60 seconds. If a Chrome window opens and shows a "Verify you are human" checkbox, tick it while the script waits. If it keeps failing, delete `.rym_profile/` and try again.
 - **`No se encontró la colección de '<user>'`**: the username is wrong or the collection isn't public. Check that `https://rateyourmusic.com/collection/<user>/r0.5-5.0` opens in your browser.
 - **`La colección está vacía para ese rango de notas.`**: the user hasn't rated any release in the range of `--min` and `--max`.
 - **Chrome doesn't open**: Playwright looks for Google Chrome in its default location. Make sure it's installed (Chromium or other browsers aren't used).
