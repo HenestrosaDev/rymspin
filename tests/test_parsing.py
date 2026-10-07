@@ -15,6 +15,9 @@ def test_parse_rows(soup):
         "year": "2018",
         "rating": "4.50",
         "url": "https://rateyourmusic.com/release/album/some-artist/first-record/",
+        "cover": "https://cdn.example.net/i/first",
+        "rated": "2019-06-08",
+        "tags": ["night", "good cover"],
     }
 
 
@@ -28,6 +31,8 @@ def test_parse_rows_handles_missing_artist_and_rating(soup):
     unrated = rym_random.parse_rows(soup)[2]
     assert unrated["artist"] == "?"
     assert unrated["rating"] == "?"
+    assert unrated["cover"] == unrated["rated"] == ""
+    assert unrated["tags"] == []
 
 
 def test_parse_rows_without_table():
