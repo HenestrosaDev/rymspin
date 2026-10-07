@@ -2,14 +2,97 @@ import collections
 import time
 
 import rym_random
-from conftest import FakeCollection, FakeFetcher
+from conftest import FakeCollection, FakeFetcher, full_pages, release
 
 
-def test_random_release_is_uniform_and_skips_missing_slots():
-    pages = [[{"url": f"p1-{i}"} for i in range(25)], [{"url": "p2-0"}, {"url": "p2-1"}]]
-    counts = collections.Counter(rym_random.random_release(FakeCollection(pages))["url"] for _ in range(27000))
-    assert len(counts) == 27
-    assert min(counts.values()) > 700 and max(counts.values()) < 1300
+def titles(picked):
+    return [r["title"] for r in picked]
+
+
+def test_pick_is_uniform_and_skips_missing_slots():
+    # 3 pages so the sampling path is used before everything gets loaded.
+    counts = collections.Counter()
+    for _ in range(4000):
+        picked, _ = rym_random.pick(FakeCollection(full_pages(3, last=2)))
+        counts.update(titles(picked))
+    assert len(counts) == 52
+    assert min(counts.values()) > 30 and max(counts.values()) < 130
+
+
+def test_pick_returns_different_releases():
+    picked, searched_all = rym_random.pick(FakeCollection(full_pages(4)), count=30)
+    assert len(set(titles(picked))) == 30
+    assert searched_all
+
+
+def test_pick_with_more_than_available_returns_everything():
+    picked, searched_all = rym_random.pick(FakeCollection(full_pages(2, last=3)), count=50)
+    assert sorted(titles(picked)) == sorted(r["title"] for page in full_pages(2, last=3) for r in page)
+    assert searched_all
+
+
+def test_pick_applies_match():
+    match = lambda r: r["title"] == "p3-7"
+    assert titles(rym_random.pick(FakeCollection(full_pages(5)), match=match)[0]) == ["p3-7"]
+
+
+def test_pick_stops_after_max_pages():
+    collection = FakeCollection(full_pages(50))
+    picked, searched_all = rym_random.pick(collection, match=lambda r: False, max_pages=4)
+    assert picked == [] and not searched_all
+    assert len(set(collection.loaded)) == 5  # page 1 plus 4 requests
+
+
+def test_pick_does_not_count_saved_pages():
+    collection = FakeCollection(full_pages(50), saved=range(1, 31))
+    rym_random.pick(collection, match=lambda r: False, max_pages=4)
+    assert len(set(collection.loaded) - set(range(1, 31))) == 4
+
+
+def test_pick_uses_every_page_when_all_are_saved():
+    collection = FakeCollection(full_pages(50), saved=range(1, 51))
+    match = lambda r: r["title"] == "p42-3"
+    assert titles(rym_random.pick(collection, match=match, max_pages=1)[0]) == ["p42-3"]
+
+
+def test_pick_with_no_match_after_loading_everything():
+    assert rym_random.pick(FakeCollection(full_pages(3)), match=lambda r: False) == ([], True)
+
+
+def test_pick_weighted_prefers_heavier_releases():
+    pages = [[release("good", rating="5.00"), release("bad", rating="0.50")]]
+    counts = collections.Counter(titles(rym_random.pick(FakeCollection(pages), weight=rym_random.rating_weight)[0])[0]
+                                 for _ in range(3000))
+    assert 8 < counts["good"] / counts["bad"] < 12
+
+
+def test_release_type():
+    assert rym_random.release_type(release("x", kind="ep")) == "ep"
+
+
+def test_filters():
+    match = rym_random.filters(types={"album"}, year_from=1970, year_to=1979, min_rating=4.0, max_rating=5.0,
+                               skip=[release("seen", year="1975", rating="4.50")["url"]])
+    assert match(release("x", year="1975", rating="4.50"))
+    assert not match(release("seen", year="1975", rating="4.50"))
+    assert not match(release("x", year="1975", rating="4.50", kind="ep"))
+    assert not match(release("x", year="1980", rating="4.50"))
+    assert not match(release("x", year="1969", rating="4.50"))
+    assert not match(release("x", year="", rating="4.50"))
+    assert not match(release("x", year="1975", rating="3.50"))
+    assert not match(release("x", year="1975", rating="?"))
+
+
+def test_filters_without_options_match_everything():
+    assert rym_random.filters()(release("x", year="", rating="?"))
+
+
+def test_history_keeps_the_last_picks(monkeypatch):
+    monkeypatch.setattr(rym_random, "HISTORY_SIZE", 3)
+    history = rym_random.load_history()
+    rym_random.save_history(history, "Example_User", [release(str(i)) for i in range(5)])
+    saved = rym_random.load_history()["example_user"]
+    assert [url.split("/")[-2] for url in saved] == ["2", "3", "4"]
 
 
 def test_collection_saves_pages_to_disk(fetcher):
@@ -22,7 +105,15 @@ def test_collection_saves_pages_to_disk(fetcher):
 
 def test_collection_requests_later_pages_by_number(fetcher):
     rym_random.Collection(fetcher, "https://x/collection/u/r0.5-5.0").page(3)
-    assert fetcher.urls == ["https://x/collection/u/r0.5-5.0/3"]
+    rym_random.Collection(fetcher, "https://x/collection/u/stag/night/").page(2)
+    assert fetcher.urls == ["https://x/collection/u/r0.5-5.0/3", "https://x/collection/u/stag/night/2"]
+
+
+def test_collection_is_available_only_for_saved_pages(fetcher):
+    rym_random.Collection(fetcher, "https://x/c").page(1)
+    collection = rym_random.Collection(fetcher, "https://x/c")
+    assert collection.is_available(1) and not collection.is_available(2)
+    assert len(fetcher.urls) == 1
 
 
 def test_collection_refresh_ignores_saved_pages(fetcher):
