@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from bs4 import BeautifulSoup
 
-import rym_random
+import rymspin
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -16,9 +16,9 @@ def soup():
 @pytest.fixture(autouse=True)
 def cache_dir(tmp_path, monkeypatch):
     """Keep every test's saved pages in its own temporary folder."""
-    monkeypatch.setattr(rym_random, "CACHE_DIR", tmp_path / "cache")
-    monkeypatch.setattr(rym_random, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(rym_random, "HISTORY_FILE", tmp_path / "history.json")
+    monkeypatch.setattr(rymspin, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(rymspin, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(rymspin, "HISTORY_FILE", tmp_path / "history.json")
     return tmp_path / "cache"
 
 

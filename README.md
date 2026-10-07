@@ -2,8 +2,8 @@
 
 <!-- PROJECT LOGO -->
 <div align="center">
-  <h1 align="center">RYM Random Rated Album</h1>
-  <p align="center">A command-line script that picks a random release from all the ones a <a href="https://rateyourmusic.com">Rate Your Music</a> user has rated.</p>
+  <h1 align="center">rymspin</h1>
+  <p align="center">Can't decide what to spin next? A command-line tool that picks a random release from the ones a <a href="https://rateyourmusic.com">Rate Your Music</a> user has rated.</p>
   <p>
     <a href="LICENSE">
       <img
@@ -37,7 +37,7 @@
 
 ## About the Project
 
-**RYM Random Rated Album** chooses a random entry from the collection of rated releases of any Rate Your Music user (the list at `https://rateyourmusic.com/collection/<user>/r0.5-5.0`) and prints its artist, title, year, rating and link. It's useful to decide what to listen to next from someone's ratings, or from your own.
+**rymspin** chooses a random entry from the collection of rated releases of any Rate Your Music user (the list at `https://rateyourmusic.com/collection/<user>/r0.5-5.0`) and prints its artist, title, year, rating and link. It's useful to decide what to listen to next from someone's ratings, or from your own.
 
 ### Features
 
@@ -50,7 +50,7 @@
 - **Shared picks**: pick a release that two users have both rated in a range, e.g. to find something you both love.
 - **Output options**: JSON output, search links for Spotify, YouTube and Bandcamp, the cover, rating date and tags, and opening the picks in the browser.
 - **Uniform choice**: every release has the same probability of being picked, whatever page it's on.
-- **Few requests**: only about two pages are loaded on each run, instead of the whole collection, so it's fast and unlikely to get your IP blocked by RYM.
+- **Few requests**: usually only about two pages are loaded on each run, instead of the whole collection, and never more than `--max-pages`, so it's fast and unlikely to get your IP blocked by RYM.
 - **Cache**: loaded pages are saved for 6 hours, so repeated runs are instant and don't even open Chrome.
 
 ### How It Works
@@ -79,7 +79,7 @@ With `--weighted`, a picked release is kept with a probability of its rating div
   │   README.md
   │   requirements.txt
   │   requirements-dev.txt
-  │   rym_random.py
+  │   rymspin.py
   │
   └───tests/
       │   conftest.py
@@ -107,11 +107,11 @@ With `--weighted`, a picked release is kept with a probability of its rating div
 
 ### Installing It as a Command
 
-With [pipx](https://pipx.pypa.io/), you can install the script as the `rym-random` command, available from any folder:
+With [pipx](https://pipx.pypa.io/), you can install the script as the `rymspin` command, available from any folder:
 
 ```bash
-pipx install git+https://github.com/HenestrosaDev/rym-random-rated-album.git
-rym-random <user>
+pipx install git+https://github.com/HenestrosaDev/rymspin.git
+rymspin <user>
 ```
 
 `pip install .` from a clone of the repository works too. You still need [Google Chrome](https://www.google.com/chrome/) installed.
@@ -119,7 +119,7 @@ rym-random <user>
 ### Setting Up the Project Locally
 
 1. Install [Google Chrome](https://www.google.com/chrome/) if you don't have it. The script uses your installed Chrome, so you don't need to run `playwright install`.
-2. Clone or download this repository and change the current working directory to its folder by running `cd rym_random_rated_album`.
+2. Clone or download this repository and change the current working directory to its folder by running `cd rymspin`.
 3. (Optional but recommended) Create a Python virtual environment in the project root by running `python3 -m venv .venv`. **Python 3.9 or later** is required.
 4. (Optional but recommended) Activate the virtual environment:
    ```bash
@@ -130,15 +130,16 @@ rym-random <user>
    source .venv/bin/activate
    ```
 5. Run `pip install -r requirements.txt` to install the dependencies.
-6. Run `python rym_random.py <user>` to pick a random release (see [Usage](#usage)).
+6. Run `python rymspin.py <user>` to pick a random release (see [Usage](#usage)).
 
 ### Notes
 
 - Chrome runs in the background without a window. If Cloudflare asks for a verification the headless browser can't pass, the script reopens Chrome with a visible window so you can tick the checkbox. Use `--show` to always show the window.
-- The Chrome profile is stored in `~/.rym-random/profile/`, so the Cloudflare session is reused between runs. Delete the folder to start from scratch. Set the `RYM_RANDOM_HOME` environment variable to use another folder.
-- The releases picked are saved in `~/.rym-random/history.json` (the last 1000 per user), which `--no-repeat` uses.
-- Loaded pages are saved in `~/.rym-random/cache/` and reused for 6 hours. Use `--refresh` to load them again, e.g. right after rating something new.
-- Earlier versions stored the profile in `.rym_profile/` inside the project folder. You can delete it, or move it to `~/.rym-random/profile/` to keep your Cloudflare session.
+- The Chrome profile is stored in `~/.rymspin/profile/`, so the Cloudflare session is reused between runs. Delete the folder to start from scratch. Set the `RYMSPIN_HOME` environment variable to use another folder.
+- The releases picked are saved in `~/.rymspin/history.json` (the last 1000 per user), which `--no-repeat` uses.
+- Loaded pages are saved in `~/.rymspin/cache/` and reused for 6 hours. Use `--refresh` to load them again, e.g. right after rating something new.
+- Before the project was renamed to rymspin, its data was stored in `~/.rym-random/`. The first run moves it to `~/.rymspin/`, so you keep your Cloudflare session, cache and history. If you set `RYM_RANDOM_HOME`, rename it to `RYMSPIN_HOME`.
+- Earlier versions stored the profile in `.rym_profile/` inside the project folder. You can delete it, or move it to `~/.rymspin/profile/` to keep your Cloudflare session.
 - To run the tests, install the development dependencies with `pip install -r requirements-dev.txt` (or `pip install -e ".[dev]"`) and run `pytest`. They use a saved page in `tests/fixtures/`, so they don't connect to RYM. If RYM changes the markup of its collection pages, update the fixture and the tests will show what broke.
 - The collection includes every type of release the user has rated, not only albums, so EPs, singles, compilations, etc. can also be picked.
 
@@ -150,37 +151,37 @@ rym-random <user>
 
 ```bash
 # Pick a random release from all the ones rated by the user
-python rym_random.py example_user
+python rymspin.py example_user
 
 # Pick only from the releases rated 4.5 or higher
-python rym_random.py example_user --min 4.5
+python rymspin.py example_user --min 4.5
 
 # Pick only from the releases rated between 1 and 2.5
-python rym_random.py example_user --min 1 --max 2.5
+python rymspin.py example_user --min 1 --max 2.5
 
 # Pick 5 different releases
-python rym_random.py example_user -n 5
+python rymspin.py example_user -n 5
 
 # Pick an EP or a single from the 90s
-python rym_random.py example_user --type ep single --from 1990 --to 1999
+python rymspin.py example_user --type ep single --from 1990 --to 1999
 
 # Pick a release the user tagged "night" and rated 4 or higher
-python rym_random.py example_user --tag night --min 4
+python rymspin.py example_user --tag night --min 4
 
 # Prefer higher-rated releases and skip the last 50 picks
-python rym_random.py example_user --weighted --no-repeat 50
+python rymspin.py example_user --weighted --no-repeat 50
 
 # Show the cover, date and tags, and search links to listen to it
-python rym_random.py example_user --details --links
+python rymspin.py example_user --details --links
 
 # Pick 3 releases as JSON and open them in the browser
-python rym_random.py example_user -n 3 --json --open
+python rymspin.py example_user -n 3 --json --open
 
 # Pick a release that both users rated 4.5 or higher
-python rym_random.py example_user --with another_user --min 4.5
+python rymspin.py example_user --with another_user --min 4.5
 
 # Always show the Chrome window
-python rym_random.py example_user --show
+python rymspin.py example_user --show
 ```
 
 Example output:
@@ -211,7 +212,7 @@ https://rateyourmusic.com/release/album/liars/mess/
 | `--show` | Always show the Chrome window. | off |
 | `--refresh` | Ignore the pages saved in the last 6 hours and load them again. | off |
 
-Run `python rym_random.py --help` to see all the options.
+Run `python rymspin.py --help` to see all the options.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -219,7 +220,7 @@ Run `python rym_random.py --help` to see all the options.
 
 ## Troubleshooting
 
-- **`Couldn't get past the Cloudflare protection.`**: the Cloudflare check didn't pass in 60 seconds. If a Chrome window opens and shows a "Verify you are human" checkbox, tick it while the script waits. If it keeps failing, delete `~/.rym-random/profile/` and try again.
+- **`Couldn't get past the Cloudflare protection.`**: the Cloudflare check didn't pass in 60 seconds. If a Chrome window opens and shows a "Verify you are human" checkbox, tick it while the script waits. If it keeps failing, delete `~/.rymspin/profile/` and try again.
 - **`Couldn't find the collection of '<user>'`**: the username is wrong or the collection isn't public. Check that `https://rateyourmusic.com/collection/<user>/r0.5-5.0` opens in your browser.
 - **`The collection is empty for that rating range.`**: the user hasn't rated any release in the range of `--min` and `--max`.
 - **`... is not a valid rating`**: ratings go from 0.5 to 5.0 in steps of 0.5, and `--min` can't be greater than `--max`.
