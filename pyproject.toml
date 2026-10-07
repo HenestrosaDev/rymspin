@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rym-random-rated-album"
+version = "0.1.0"
+description = "Pick a random release from the ones a Rate Your Music user has rated."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "HenestrosaDev", email = "github@henestrosa.dev" }]
+requires-python = ">=3.9"
+dependencies = ["playwright", "beautifulsoup4"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+rym-random = "rym_random:main"
+
+[tool.setuptools]
+py-modules = ["rym_random"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

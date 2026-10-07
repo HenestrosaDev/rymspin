@@ -5,12 +5,13 @@ Usage:
     python rym_random.py USER [--min 0.5] [--max 5.0] [--show]
 
 RYM is behind Cloudflare, so a real Chrome controlled with Playwright is used.
-The profile is stored in .rym_profile/ to reuse the Cloudflare cookie between
+The profile is stored in ~/.rym-random/profile/ (or $RYM_RANDOM_HOME) to reuse the Cloudflare cookie between
 runs. The browser runs without a window; one only opens if Cloudflare asks for
 a verification (or with --show).
 """
 
 import argparse
+import os
 import random
 import re
 import sys
@@ -21,7 +22,8 @@ from playwright.sync_api import sync_playwright
 
 BASE = "https://rateyourmusic.com"
 PER_PAGE = 25
-PROFILE_DIR = Path(__file__).resolve().parent / ".rym_profile"
+DATA_DIR = Path(os.environ.get("RYM_RANDOM_HOME") or Path.home() / ".rym-random")
+PROFILE_DIR = DATA_DIR / "profile"
 
 
 class Fetcher:

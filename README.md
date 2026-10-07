@@ -24,6 +24,7 @@
   - [Project Structure](#project-structure)
   - [Built With](#built-with)
 - [Getting Started](#getting-started)
+  - [Installing It as a Command](#installing-it-as-a-command)
   - [Setting Up the Project Locally](#setting-up-the-project-locally)
   - [Notes](#notes)
 - [Usage](#usage)
@@ -61,18 +62,17 @@ To choose a release, it loads the first page to know how many pages the collecti
   ```
   │   .gitignore
   │   LICENSE
+  │   pyproject.toml
   │   README.md
   │   requirements.txt
   │   requirements-dev.txt
   │   rym_random.py
   │
-  ├───tests/
-  │   │   test_parsing.py
-  │   │
-  │   └───fixtures/
-  │           collection.html
-  │
-  └───.rym_profile/ (Chrome profile with the Cloudflare session, created on the first run)
+  └───tests/
+      │   test_parsing.py
+      │
+      └───fixtures/
+              collection.html
   ```
 </details>
 
@@ -88,6 +88,17 @@ To choose a release, it loads the first page to know how many pages the collecti
 <!-- GETTING STARTED -->
 
 ## Getting Started
+
+### Installing It as a Command
+
+With [pipx](https://pipx.pypa.io/), you can install the script as the `rym-random` command, available from any folder:
+
+```bash
+pipx install git+https://github.com/HenestrosaDev/rym-random-rated-album.git
+rym-random <user>
+```
+
+`pip install .` from a clone of the repository works too. You still need [Google Chrome](https://www.google.com/chrome/) installed.
 
 ### Setting Up the Project Locally
 
@@ -108,8 +119,9 @@ To choose a release, it loads the first page to know how many pages the collecti
 ### Notes
 
 - Chrome runs in the background without a window. If Cloudflare asks for a verification the headless browser can't pass, the script reopens Chrome with a visible window so you can tick the checkbox. Use `--show` to always show the window.
-- The Chrome profile is stored in `.rym_profile/`, so the Cloudflare session is reused between runs. Delete the folder to start from scratch.
-- To run the tests, install the development dependencies with `pip install -r requirements-dev.txt` and run `pytest`. They use a saved page in `tests/fixtures/`, so they don't connect to RYM. If RYM changes the markup of its collection pages, update the fixture and the tests will show what broke.
+- The Chrome profile is stored in `~/.rym-random/profile/`, so the Cloudflare session is reused between runs. Delete the folder to start from scratch. Set the `RYM_RANDOM_HOME` environment variable to use another folder.
+- Earlier versions stored the profile in `.rym_profile/` inside the project folder. You can delete it, or move it to `~/.rym-random/profile/` to keep your Cloudflare session.
+- To run the tests, install the development dependencies with `pip install -r requirements-dev.txt` (or `pip install -e ".[dev]"`) and run `pytest`. They use a saved page in `tests/fixtures/`, so they don't connect to RYM. If RYM changes the markup of its collection pages, update the fixture and the tests will show what broke.
 - The collection includes every type of release the user has rated, not only albums, so EPs, singles, compilations, etc. can also be picked.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
@@ -155,7 +167,7 @@ Run `python rym_random.py --help` to see all the options.
 
 ## Troubleshooting
 
-- **`Couldn't get past the Cloudflare protection.`**: the Cloudflare check didn't pass in 60 seconds. If a Chrome window opens and shows a "Verify you are human" checkbox, tick it while the script waits. If it keeps failing, delete `.rym_profile/` and try again.
+- **`Couldn't get past the Cloudflare protection.`**: the Cloudflare check didn't pass in 60 seconds. If a Chrome window opens and shows a "Verify you are human" checkbox, tick it while the script waits. If it keeps failing, delete `~/.rym-random/profile/` and try again.
 - **`Couldn't find the collection of '<user>'`**: the username is wrong or the collection isn't public. Check that `https://rateyourmusic.com/collection/<user>/r0.5-5.0` opens in your browser.
 - **`The collection is empty for that rating range.`**: the user hasn't rated any release in the range of `--min` and `--max`.
 - **`... is not a valid rating`**: ratings go from 0.5 to 5.0 in steps of 0.5, and `--min` can't be greater than `--max`.
