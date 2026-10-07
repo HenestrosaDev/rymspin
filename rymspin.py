@@ -5,15 +5,15 @@ Usage:
     python rymspin.py USER [--min 0.5] [--max 5.0] [-n 1] [--type album ep]
                            [--from 1970] [--to 1979] [--decade 1970s] [--tag TAG]
                            [--rated-from 2015] [--rated-to 2019-06] [--weighted]
-                           [--no-repeat 50] [--seed SEED | --daily] [--details]
-                           [--links] [--json] [--open] [--show] [--refresh]
+                           [--no-repeat 50] [--seed SEED | --daily] [--max-pages 5]
+                           [--details] [--links] [--json] [--open] [--show] [--refresh]
                            [--with OTHER_USER | --new-from OTHER_USER]
     python rymspin.py USER --history [20] [--json]
 
 RYM is behind Cloudflare, so a real Chrome controlled with Playwright is used.
-The profile is stored in ~/.rymspin/profile/ (or $RYMSPIN_HOME) to reuse the Cloudflare cookie between
-runs. The browser runs without a window; one only opens if Cloudflare asks for
-a verification (or with --show).
+The profile is stored in ~/.rymspin/profile/ (or $RYMSPIN_HOME) to reuse the
+Cloudflare cookie between runs. The browser runs without a window; one only
+opens if Cloudflare asks for a verification (or with --show).
 """
 
 import argparse

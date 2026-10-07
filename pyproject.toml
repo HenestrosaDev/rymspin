@@ -12,6 +12,10 @@ authors = [{ name = "HenestrosaDev", email = "github@henestrosa.dev" }]
 requires-python = ">=3.10"
 dependencies = ["playwright", "beautifulsoup4"]
 
+[project.urls]
+Homepage = "https://github.com/HenestrosaDev/rymspin"
+Issues = "https://github.com/HenestrosaDev/rymspin/issues"
+
 [project.optional-dependencies]
 dev = ["pytest", "ruff", "mypy", "pre-commit"]
 
