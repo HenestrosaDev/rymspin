@@ -69,7 +69,7 @@ RYM can only limit the collection by rating, so the other filters (type, year, p
 
 With `--with OTHER_USER`, it needs to know every release both users rated in the range, so it reads both collections whole instead. It still loads at most `--max-pages` pages per run: if the collections have more, it stops and the next run goes on from the saved pages. A high `--min` keeps the collections small, e.g. `--min 4.5` usually fits in a few pages.
 
-With `--weighted`, a picked release is kept with a probability of its rating divided by 5, so a 5.0 is twice as likely as a 2.5 and ten times as likely as a 0.5.
+With `--weighted`, a picked release is kept with a probability of its rating divided by `--max` (5.0 by default), so a 5.0 is twice as likely as a 2.5 and ten times as likely as a 0.5. Dividing by `--max` rather than by 5 means the highest ratings in the range are always kept, so a low `--max` doesn't discard most picks and load extra pages.
 
 <!-- PROJECT STRUCTURE -->
 
