@@ -1,17 +1,9 @@
 import argparse
-from pathlib import Path
 
 import pytest
 from bs4 import BeautifulSoup
 
 import rym_random
-
-FIXTURES = Path(__file__).parent / "fixtures"
-
-
-@pytest.fixture
-def soup():
-    return BeautifulSoup((FIXTURES / "collection.html").read_text(), "html.parser")
 
 
 def test_parse_rows(soup):

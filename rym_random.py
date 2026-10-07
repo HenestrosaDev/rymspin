@@ -11,10 +11,13 @@ a verification (or with --show).
 """
 
 import argparse
+import hashlib
+import json
 import os
 import random
 import re
 import sys
+import time
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -24,19 +27,22 @@ BASE = "https://rateyourmusic.com"
 PER_PAGE = 25
 DATA_DIR = Path(os.environ.get("RYM_RANDOM_HOME") or Path.home() / ".rym-random")
 PROFILE_DIR = DATA_DIR / "profile"
+CACHE_DIR = DATA_DIR / "cache"
+CACHE_TTL = 6 * 3600  # seconds a saved page is reused
 
 
 class Fetcher:
     """Chrome browser with a persistent profile.
 
     Starts headless; if Cloudflare doesn't let it through, it reopens with a
-    visible window so the challenge can be solved by hand.
+    visible window so the challenge can be solved by hand. Chrome is only
+    launched on the first request, so runs served from the cache don't open it.
     """
 
     def __init__(self, headless=True):
-        self._pw = sync_playwright().start()
+        self.headless = headless
+        self._pw = None
         self._ctx = None
-        self._launch(headless)
 
     def _launch(self, headless):
         if self._ctx is not None:
@@ -63,6 +69,9 @@ class Fetcher:
         return self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
 
     def get(self, url):
+        if self._pw is None:
+            self._pw = sync_playwright().start()
+            self._launch(self.headless)
         self._page.goto(url)
         # Wait for the Cloudflare challenge to clear. Headless waits briefly
         # and, if it doesn't pass, retries with a window (up to ~60 s, in case
@@ -81,8 +90,47 @@ class Fetcher:
         return BeautifulSoup(self._page.content(), "html.parser")
 
     def close(self):
-        self._ctx.close()
-        self._pw.stop()
+        if self._ctx is not None:
+            self._ctx.close()
+        if self._pw is not None:
+            self._pw.stop()
+
+
+class Collection:
+    """Pages of a collection URL, saved to disk for CACHE_TTL seconds."""
+
+    def __init__(self, fetcher, url, refresh=False):
+        self.fetcher = fetcher
+        self.url = url
+        self.refresh = refresh
+        self._pages = {}
+
+    def page(self, number):
+        """Return (rows, last page number), or None if the collection doesn't exist."""
+        if number not in self._pages:
+            self._pages[number] = self._load(number)
+        return self._pages[number]
+
+    def _load(self, number):
+        url = self.url if number == 1 else f"{self.url}/{number}"
+        path = CACHE_DIR / (hashlib.sha1(url.encode()).hexdigest() + ".json")
+        if not self.refresh:
+            try:
+                saved = json.loads(path.read_text())
+                if time.time() - saved["time"] < CACHE_TTL:
+                    return saved["rows"], saved["pages"]
+            except (OSError, ValueError, KeyError):
+                pass
+        soup = self.fetcher.get(url)
+        if soup.find("table", class_="mbgen") is None:
+            return None
+        rows, pages = parse_rows(soup), last_page(soup)
+        try:
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"time": time.time(), "url": url, "rows": rows, "pages": pages}))
+        except OSError:
+            pass
+        return rows, pages
 
 
 def parse_rows(soup):
@@ -112,6 +160,22 @@ def last_page(soup):
     return max(nums, default=1)
 
 
+def random_release(collection):
+    """Pick a release uniformly at random from the collection.
+
+    Picks a random page and position; if the position doesn't exist (only
+    possible on the last page, which is incomplete), it picks again. Only the
+    pages that are picked get loaded.
+    """
+    pages = collection.page(1)[1]
+    while True:
+        page = collection.page(random.randint(1, pages))
+        rows = page[0] if page else []
+        slot = random.randrange(PER_PAGE)
+        if slot < len(rows):
+            return rows[slot]
+
+
 def rating(value):
     """argparse type for a RYM rating: 0.5 to 5.0 in steps of 0.5."""
     try:
@@ -129,31 +193,20 @@ def main():
     parser.add_argument("--min", type=rating, default=0.5, help="minimum rating (default 0.5)")
     parser.add_argument("--max", type=rating, default=5.0, help="maximum rating (default 5.0)")
     parser.add_argument("--show", action="store_true", help="always show the browser window")
+    parser.add_argument("--refresh", action="store_true", help="ignore the pages saved in the last hours and load them again")
     args = parser.parse_args()
     if args.min > args.max:
         parser.error(f"--min ({args.min}) can't be greater than --max ({args.max})")
 
-    collection = f"{BASE}/collection/{args.user}/r{args.min:.1f}-{args.max:.1f}"
     fetcher = Fetcher(headless=not args.show)
+    collection = Collection(fetcher, f"{BASE}/collection/{args.user}/r{args.min:.1f}-{args.max:.1f}", args.refresh)
     try:
-        first = fetcher.get(collection)
-        if first.find("table", class_="mbgen") is None:
+        first = collection.page(1)
+        if first is None:
             sys.exit(f"Couldn't find the collection of '{args.user}' (wrong username or private collection?).")
-        cache = {1: parse_rows(first)}
-        if not cache[1]:
+        if not first[0]:
             sys.exit("The collection is empty for that rating range.")
-        pages = last_page(first)
-
-        # Uniform sampling: random page and position; if the position doesn't
-        # exist (only possible on the last page, which is incomplete), retry.
-        while True:
-            page = random.randint(1, pages)
-            slot = random.randrange(PER_PAGE)
-            if page not in cache:
-                cache[page] = parse_rows(fetcher.get(f"{collection}/{page}"))
-            if slot < len(cache[page]):
-                choice = cache[page][slot]
-                break
+        choice = random_release(collection)
     finally:
         fetcher.close()
 
@@ -161,6 +214,7 @@ def main():
     print(f"{choice['artist']} - {choice['title']}{year}")
     print(f"Rating: {choice['rating']}")
     print(choice["url"])
+
 
 if __name__ == "__main__":
     main()
