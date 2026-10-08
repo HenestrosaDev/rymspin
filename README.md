@@ -4,7 +4,9 @@
 <div align="center">
   <img src="assets/icon.svg" alt="rymspin icon" width="128" height="128" />
   <h1 align="center">rymspin</h1>
-  <p align="center">Can't decide what to spin next? A command-line tool that picks a random release from the ones a <a href="https://rateyourmusic.com">Rate Your Music</a> user has rated.</p>
+  <p align="center">
+    Can't decide what to play next? This command-line tool picks a random release from those rated by a <a href="https://rateyourmusic.com">Rate Your Music</a> user.
+  </p>
   <p>
     <a href="https://github.com/HenestrosaDev/rymspin/actions/workflows/ci.yml">
       <img
@@ -94,7 +96,20 @@ With `--weighted`, a picked release is kept with a probability of its rating div
   │   README.md
   │   requirements.txt
   │   requirements-dev.txt
-  │   rymspin.py
+  │
+  ├───rymspin/
+  │       __init__.py
+  │       __main__.py      # python -m rymspin
+  │       cli.py           # options and main()
+  │       collection.py    # loading pages and saving them to disk
+  │       config.py        # RYM's address, data folder and defaults
+  │       fetcher.py       # Chrome, Cloudflare and the delay between pages
+  │       filters.py       # which releases can be picked
+  │       history.py       # earlier picks
+  │       output.py        # text, JSON and search links
+  │       parsing.py       # reading releases out of a collection page
+  │       picking.py       # random and weighted picking
+  │       releases.py      # fields of a release
   │
   ├───assets/
   │       icon.svg
@@ -152,7 +167,7 @@ rymspin <user>
    source .venv/bin/activate
    ```
 5. Run `pip install -r requirements.txt` to install the dependencies.
-6. Run `python rymspin.py <user>` to pick a random release (see [Usage](#usage)).
+6. Run `python -m rymspin <user>` to pick a random release (see [Usage](#usage)).
 
 ### Notes
 
@@ -170,51 +185,53 @@ rymspin <user>
 
 ## Usage
 
+The examples use the `rymspin` command. From a clone without installing it, use `python -m rymspin` instead.
+
 ```bash
 # Pick a random release from all the ones rated by the user
-python rymspin.py example_user
+rymspin example_user
 
 # Pick only from the releases rated 4.5 or higher
-python rymspin.py example_user --min 4.5
+rymspin example_user --min 4.5
 
 # Pick only from the releases rated between 1 and 2.5
-python rymspin.py example_user --min 1 --max 2.5
+rymspin example_user --min 1 --max 2.5
 
 # Pick 5 different releases
-python rymspin.py example_user -n 5
+rymspin example_user -n 5
 
 # Pick an EP or a single from the 90s
-python rymspin.py example_user --type ep single --decade 1990s
+rymspin example_user --type ep single --decade 1990s
 
 # Rediscover a release rated 4 or higher before 2020
-python rymspin.py example_user --min 4 --rated-to 2019
+rymspin example_user --min 4 --rated-to 2019
 
 # Pick a release the user tagged "night" and rated 4 or higher
-python rymspin.py example_user --tag night --min 4
+rymspin example_user --tag night --min 4
 
 # Prefer higher-rated releases and skip the last 50 picks
-python rymspin.py example_user --weighted --no-repeat 50
+rymspin example_user --weighted --no-repeat 50
 
 # Show the cover, date and tags, and search links to listen to it
-python rymspin.py example_user --details --links
+rymspin example_user --details --links
 
 # Pick 3 releases as JSON and open them in the browser
-python rymspin.py example_user -n 3 --json --open
+rymspin example_user -n 3 --json --open
 
 # Pick a release that both users rated 4.5 or higher
-python rymspin.py example_user --with another_user --min 4.5
+rymspin example_user --with another_user --min 4.5
 
 # Pick a release that another user rated 4.5 or higher and you haven't rated
-python rymspin.py example_user --new-from another_user --min 4.5
+rymspin example_user --new-from another_user --min 4.5
 
 # Pick the release of the day, never repeating the last 100
-python rymspin.py example_user --daily --no-repeat 100
+rymspin example_user --daily --no-repeat 100
 
 # Show the last 20 releases picked
-python rymspin.py example_user --history
+rymspin example_user --history
 
 # Always show the Chrome window
-python rymspin.py example_user --show
+rymspin example_user --show
 ```
 
 Example output:
@@ -251,7 +268,7 @@ https://rateyourmusic.com/release/album/liars/mess/
 | `--show` | Always show the Chrome window. | off |
 | `--refresh` | Ignore the pages saved in the last 6 hours and load them again. | off |
 
-Run `python rymspin.py --help` to see all the options.
+Run `rymspin --help` to see all the options.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
