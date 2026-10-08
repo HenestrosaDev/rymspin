@@ -2,6 +2,7 @@
 
 <!-- PROJECT LOGO -->
 <div align="center">
+  <img src="assets/icon.svg" alt="rymspin icon" width="128" height="128" />
   <h1 align="center">rymspin</h1>
   <p align="center">Can't decide what to spin next? A command-line tool that picks a random release from the ones a <a href="https://rateyourmusic.com">Rate Your Music</a> user has rated.</p>
   <p>
@@ -94,6 +95,9 @@ With `--weighted`, a picked release is kept with a probability of its rating div
   │   requirements.txt
   │   requirements-dev.txt
   │   rymspin.py
+  │
+  ├───assets/
+  │       icon.svg
   │
   ├───.github/
   │   └───workflows/
