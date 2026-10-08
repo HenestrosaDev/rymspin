@@ -2,8 +2,8 @@
 
 <!-- PROJECT LOGO -->
 <div align="center">
-  <img src="assets/icon.svg" alt="rymspin icon" width="128" height="128" />
-  <h1 align="center">rymspin</h1>
+  <img src="assets/icon.svg" alt="RYMSpin icon" width="128" height="128" />
+  <h1 align="center">RYMSpin</h1>
   <p align="center">
     Can't decide what to play next? This command-line tool picks a random release from those rated by a <a href="https://rateyourmusic.com">Rate Your Music</a> user.
   </p>
