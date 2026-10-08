@@ -56,8 +56,13 @@ class FakeCollection:
 
 
 def release(url, year="2000", rating="3.00", kind="album"):
-    return {"artist": "A", "title": url, "year": year, "rating": rating,
-            "url": f"https://rateyourmusic.com/release/{kind}/a/{url}/"}
+    return {
+        "artist": "A",
+        "title": url,
+        "year": year,
+        "rating": rating,
+        "url": f"https://rateyourmusic.com/release/{kind}/a/{url}/",
+    }
 
 
 def full_pages(count, last=25):

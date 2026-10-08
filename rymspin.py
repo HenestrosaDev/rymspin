@@ -40,7 +40,19 @@ HISTORY_FILE = DATA_DIR / "history.json"
 HISTORY_SIZE = 1000  # picks remembered per user
 MAX_PAGES = 5  # pages loaded from RYM at most per run when filters skip releases
 REQUEST_DELAY = 3  # seconds between page loads; quick bursts get the IP blocked
-RELEASE_TYPES = ["album", "ep", "single", "comp", "mixtape", "djmix", "musicvideo", "video", "additional", "bootleg", "unauth"]
+RELEASE_TYPES = [
+    "album",
+    "ep",
+    "single",
+    "comp",
+    "mixtape",
+    "djmix",
+    "musicvideo",
+    "video",
+    "additional",
+    "bootleg",
+    "unauth",
+]
 
 
 class Fetcher:
@@ -58,15 +70,16 @@ class Fetcher:
         self._last_request = 0.0
 
     def _launch(self, headless):
+        assert self._pw is not None  # started by get()
         if self._ctx is not None:
             self._ctx.close()
         self.headless = headless
-        opts = dict(
-            channel="chrome",
-            headless=headless,
-            ignore_default_args=["--enable-automation"],
-            args=["--disable-blink-features=AutomationControlled"],
-        )
+        opts = {
+            "channel": "chrome",
+            "headless": headless,
+            "ignore_default_args": ["--enable-automation"],
+            "args": ["--disable-blink-features=AutomationControlled"],
+        }
         self._ctx = self._pw.chromium.launch_persistent_context(PROFILE_DIR, **opts)
         if headless:
             # The headless user agent contains "HeadlessChrome", which Cloudflare
@@ -79,6 +92,7 @@ class Fetcher:
         self._page = self._new_page()
 
     def _new_page(self):
+        assert self._ctx is not None
         return self._ctx.pages[0] if self._ctx.pages else self._ctx.new_page()
 
     def get(self, url):
@@ -104,8 +118,10 @@ class Fetcher:
                 return self.get(url)
             sys.exit("Couldn't get past the Cloudflare protection.")
         if "IP blocked" in self._page.title():
-            sys.exit("RYM has temporarily blocked your IP for loading too many pages. Wait a few hours "
-                     "(the block lifts by itself) and use fewer pages, e.g. a lower --max-pages.")
+            sys.exit(
+                "RYM has temporarily blocked your IP for loading too many pages. Wait a few hours "
+                "(the block lifts by itself) and use fewer pages, e.g. a lower --max-pages."
+            )
         self._page.wait_for_load_state("networkidle")
         return BeautifulSoup(self._page.content(), "html.parser")
 
@@ -185,21 +201,26 @@ def parse_rows(soup):
         rating = row.select_one("td.or_q_rating_date_s img")
         year = row.select_one("div.or_q_albumartist span.smallgray")
         cover = row.select_one("td.or_q_thumb_album img")
-        albums.append({
-            "artist": " & ".join(a.get_text(" ", strip=True) for a in artists) or "?",
-            "title": album.get_text(" ", strip=True),
-            "year": year.get_text(strip=True).strip("()") if year else "",
-            "rating": rating["title"].replace(" stars", "") if rating else "?",
-            "url": BASE + album["href"],
-            "cover": "https:" + cover["src"] if cover and cover.get("src", "").startswith("//") else
-                     (cover.get("src", "") if cover else ""),
-            "rated": rated_date(row),
-            "tags": [a.get_text(" ", strip=True) for a in row.select("div.or_q_tagcloud a")],
-        })
+        albums.append(
+            {
+                "artist": " & ".join(a.get_text(" ", strip=True) for a in artists) or "?",
+                "title": album.get_text(" ", strip=True),
+                "year": year.get_text(strip=True).strip("()") if year else "",
+                "rating": rating["title"].replace(" stars", "") if rating else "?",
+                "url": BASE + album["href"],
+                "cover": "https:" + cover["src"]
+                if cover and cover.get("src", "").startswith("//")
+                else (cover.get("src", "") if cover else ""),
+                "rated": rated_date(row),
+                "tags": [a.get_text(" ", strip=True) for a in row.select("div.or_q_tagcloud a")],
+            }
+        )
     return albums
 
 
-MONTHS = {m: i for i, m in enumerate(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
+MONTHS = {
+    m: i for i, m in enumerate(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)
+}
 
 
 def rated_date(row):
@@ -232,7 +253,7 @@ def last_page(soup):
 
 def release_type(release):
     """Type of a release (album, ep, single, comp...), taken from its URL."""
-    return release["url"][len(BASE):].split("/")[2]
+    return release["url"][len(BASE) :].split("/")[2]
 
 
 def pick(collection, count=1, match=None, weight=None, max_pages=MAX_PAGES):
@@ -259,7 +280,7 @@ def pick(collection, count=1, match=None, weight=None, max_pages=MAX_PAGES):
     pages = collection.page(1)[1]
     loaded = {1}
     requests = 0
-    picked = []
+    picked: list[dict] = []
     while len(picked) < count:
         if len(loaded) < pages and all(collection.is_available(n) for n in range(1, pages + 1)):
             loaded = set(range(1, pages + 1))
@@ -287,7 +308,7 @@ def choose(releases, count, weight=None):
     """Pick up to `count` different releases from a list, by `weight` if given."""
     weight = weight or (lambda release: 1.0)
     left = list(releases)
-    picked = []
+    picked: list[dict] = []
     while left and len(picked) < count:
         release = random.choices(left, [weight(r) for r in left])[0]
         picked.append(release)
@@ -318,8 +339,11 @@ def all_rows(collection, max_pages):
 def shared_releases(mine, theirs, other_user):
     """Releases in both lists, each with the other user's rating added."""
     their_ratings = {r["url"]: r["rating"] for r in theirs}
-    return [dict(r, other={"user": other_user, "rating": their_ratings[r["url"]]})
-            for r in mine if r["url"] in their_ratings]
+    return [
+        dict(r, other={"user": other_user, "rating": their_ratings[r["url"]]})
+        for r in mine
+        if r["url"] in their_ratings
+    ]
 
 
 def shared_weight(release):
@@ -353,11 +377,15 @@ def filters(types=None, year_from=None, year_to=None, min_rating=None, max_ratin
             if not release["year"].isdigit():
                 return False
             year = int(release["year"])
-            if year_from is not None and year < year_from or year_to is not None and year > year_to:
+            if (year_from is not None and year < year_from) or (year_to is not None and year > year_to):
                 return False
         if min_rating is not None or max_rating is not None:
             value = rating_value(release)
-            if value is None or min_rating is not None and value < min_rating or max_rating is not None and value > max_rating:
+            if (
+                value is None
+                or (min_rating is not None and value < min_rating)
+                or (max_rating is not None and value > max_rating)
+            ):
                 return False
         return True
 
@@ -402,12 +430,13 @@ def format_release(release, details=False, links=False):
         lines += [f"{names[site]}: {url}" for site, url in search_links(release).items()]
     return "\n".join(lines)
 
+
 def rating(value):
     """argparse type for a RYM rating: 0.5 to 5.0 in steps of 0.5."""
     try:
         r = float(value)
     except ValueError:
-        raise argparse.ArgumentTypeError(f"'{value}' is not a number")
+        raise argparse.ArgumentTypeError(f"'{value}' is not a number") from None
     if not 0.5 <= r <= 5.0 or r * 2 != int(r * 2):
         raise argparse.ArgumentTypeError(f"{value} is not a valid rating (0.5 to 5.0 in steps of 0.5)")
     return r
@@ -418,7 +447,7 @@ def positive(value):
     try:
         n = int(value)
     except ValueError:
-        raise argparse.ArgumentTypeError(f"'{value}' is not a whole number")
+        raise argparse.ArgumentTypeError(f"'{value}' is not a whole number") from None
     if n < 1:
         raise argparse.ArgumentTypeError(f"{value} must be 1 or more")
     return n
@@ -435,22 +464,43 @@ def main():
     parser.add_argument("user", help="RYM username")
     parser.add_argument("--min", type=rating, default=0.5, help="minimum rating (default 0.5)")
     parser.add_argument("--max", type=rating, default=5.0, help="maximum rating (default 5.0)")
-    parser.add_argument("-n", "--count", type=positive, default=1, help="number of different releases to pick (default 1)")
-    parser.add_argument("--type", nargs="+", metavar="TYPE", help=f"only pick these release types ({', '.join(RELEASE_TYPES)})")
-    parser.add_argument("--from", dest="year_from", type=int, metavar="YEAR", help="only pick releases from this year or later")
-    parser.add_argument("--to", dest="year_to", type=int, metavar="YEAR", help="only pick releases from this year or earlier")
+    parser.add_argument(
+        "-n", "--count", type=positive, default=1, help="number of different releases to pick (default 1)"
+    )
+    parser.add_argument(
+        "--type", nargs="+", metavar="TYPE", help=f"only pick these release types ({', '.join(RELEASE_TYPES)})"
+    )
+    parser.add_argument(
+        "--from", dest="year_from", type=int, metavar="YEAR", help="only pick releases from this year or later"
+    )
+    parser.add_argument(
+        "--to", dest="year_to", type=int, metavar="YEAR", help="only pick releases from this year or earlier"
+    )
     parser.add_argument("--tag", help="only pick releases the user tagged with this tag")
     parser.add_argument("--weighted", action="store_true", help="make higher-rated releases more likely to be picked")
     parser.add_argument("--no-repeat", type=positive, metavar="N", help="skip the last N releases picked for this user")
-    parser.add_argument("--max-pages", type=positive, default=MAX_PAGES, help=f"pages to load at most when filters skip releases (default {MAX_PAGES})")
-    parser.add_argument("--details", action="store_true", help="also show the cover, the date it was rated and the tags")
+    parser.add_argument(
+        "--max-pages",
+        type=positive,
+        default=MAX_PAGES,
+        help=f"pages to load at most when filters skip releases (default {MAX_PAGES})",
+    )
+    parser.add_argument(
+        "--details", action="store_true", help="also show the cover, the date it was rated and the tags"
+    )
     parser.add_argument("--links", action="store_true", help="also show search links for Spotify, YouTube and Bandcamp")
     parser.add_argument("--json", action="store_true", help="print the picks as JSON")
     parser.add_argument("--open", action="store_true", help="open the picks on RYM in the web browser")
-    parser.add_argument("--with", dest="other_user", metavar="OTHER_USER",
-                        help="only pick releases that OTHER_USER also rated within --min and --max")
+    parser.add_argument(
+        "--with",
+        dest="other_user",
+        metavar="OTHER_USER",
+        help="only pick releases that OTHER_USER also rated within --min and --max",
+    )
     parser.add_argument("--show", action="store_true", help="always show the browser window")
-    parser.add_argument("--refresh", action="store_true", help="ignore the pages saved in the last hours and load them again")
+    parser.add_argument(
+        "--refresh", action="store_true", help="ignore the pages saved in the last hours and load them again"
+    )
     args = parser.parse_args()
     move_old_data()
     if args.min > args.max:
@@ -459,19 +509,21 @@ def main():
         parser.error(f"--from ({args.year_from}) can't be later than --to ({args.year_to})")
     types = {t.lower() for t in args.type} if args.type else None
     if types and types - set(RELEASE_TYPES):
-        parser.error(f"unknown release type: {', '.join(sorted(types - set(RELEASE_TYPES)))} (use {', '.join(RELEASE_TYPES)})")
+        parser.error(
+            f"unknown release type: {', '.join(sorted(types - set(RELEASE_TYPES)))} (use {', '.join(RELEASE_TYPES)})"
+        )
 
     history = load_history()
-    skip = history.get(args.user.lower(), [])[-args.no_repeat:] if args.no_repeat else ()
+    skip = history.get(args.user.lower(), [])[-args.no_repeat :] if args.no_repeat else ()
     if args.tag:
         # Tag pages can't be limited to a rating range, so the range is checked
         # on each release instead.
         url = f"{BASE}/collection/{args.user}/stag/{quote_plus(args.tag.lower())}/"
-        ratings = (args.min, args.max) if (args.min, args.max) != (0.5, 5.0) else (None, None)
+        min_rating, max_rating = (args.min, args.max) if (args.min, args.max) != (0.5, 5.0) else (None, None)
     else:
         url = f"{BASE}/collection/{args.user}/r{args.min:.1f}-{args.max:.1f}"
-        ratings = (None, None)
-    match = filters(types, args.year_from, args.year_to, *ratings, skip=skip)
+        min_rating = max_rating = None
+    match = filters(types, args.year_from, args.year_to, min_rating, max_rating, skip)
 
     fetcher = Fetcher(headless=not args.show)
     collection = Collection(fetcher, url, args.refresh)
@@ -486,19 +538,32 @@ def main():
             picked = pick_shared(fetcher, collection, args, match)
             searched_all = True
         else:
-            picked, searched_all = pick(collection, args.count, match, rating_weight if args.weighted else None,
-                                        args.max_pages)
+            picked, searched_all = pick(
+                collection, args.count, match, rating_weight if args.weighted else None, args.max_pages
+            )
     finally:
         fetcher.close()
 
     if len(picked) < args.count:
         if searched_all:
-            reason = "No release matches the filters." if not picked else (f"Only {len(picked)} releases match the filters." if len(picked) > 1 else "Only 1 release matches the filters.")
+            reason = (
+                "No release matches the filters."
+                if not picked
+                else (
+                    f"Only {len(picked)} releases match the filters."
+                    if len(picked) > 1
+                    else "Only 1 release matches the filters."
+                )
+            )
         else:
-            reason = (f"Stopped after loading {args.max_pages} pages without finding enough releases that match "
-                      "the filters; use --max-pages to search more.")
+            reason = (
+                f"Stopped after loading {args.max_pages} pages without finding enough releases that match "
+                "the filters; use --max-pages to search more."
+            )
         if not picked and args.other_user:
-            reason = f"No release rated by both '{args.user}' and '{args.other_user}' in that range matches the filters."
+            reason = (
+                f"No release rated by both '{args.user}' and '{args.other_user}' in that range matches the filters."
+            )
         if not picked:
             sys.exit(reason)
         print(reason, file=sys.stderr)
@@ -517,7 +582,6 @@ def main():
             webbrowser.open(choice["url"])
 
 
-
 def pick_shared(fetcher, collection, args, match):
     """Pick releases both users rated, reading both collections whole.
 
@@ -530,9 +594,11 @@ def pick_shared(fetcher, collection, args, match):
     mine, used, mine_done = all_rows(collection, args.max_pages)
     theirs, used_too, theirs_done = ([], 0, False) if not mine_done else all_rows(other, args.max_pages - used)
     if not (mine_done and theirs_done):
-        sys.exit(f"Loaded {used + used_too} more pages of the two collections, but they have more. Run the same "
-                 "command again in a while to go on (loaded pages are saved for 6 hours), or use a higher --min "
-                 "to read fewer pages.")
+        sys.exit(
+            f"Loaded {used + used_too} more pages of the two collections, but they have more. Run the same "
+            "command again in a while to go on (loaded pages are saved for 6 hours), or use a higher --min "
+            "to read fewer pages."
+        )
     shared = [r for r in shared_releases(mine, theirs, args.other_user) if match(r)]
     return choose(shared, args.count, shared_weight if args.weighted else None)
 

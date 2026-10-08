@@ -1,8 +1,9 @@
 import collections
 import time
 
-import rymspin
 from conftest import FakeCollection, FakeFetcher, full_pages, release
+
+import rymspin
 
 
 def titles(picked):
@@ -11,7 +12,7 @@ def titles(picked):
 
 def test_pick_is_uniform_and_skips_missing_slots():
     # 3 pages so the sampling path is used before everything gets loaded.
-    counts = collections.Counter()
+    counts: collections.Counter[str] = collections.Counter()
     for _ in range(4000):
         picked, _ = rymspin.pick(FakeCollection(full_pages(3, last=2)))
         counts.update(titles(picked))
@@ -32,8 +33,7 @@ def test_pick_with_more_than_available_returns_everything():
 
 
 def test_pick_applies_match():
-    match = lambda r: r["title"] == "p3-7"
-    assert titles(rymspin.pick(FakeCollection(full_pages(5)), match=match)[0]) == ["p3-7"]
+    assert titles(rymspin.pick(FakeCollection(full_pages(5)), match=lambda r: r["title"] == "p3-7")[0]) == ["p3-7"]
 
 
 def test_pick_stops_after_max_pages():
@@ -51,8 +51,8 @@ def test_pick_does_not_count_saved_pages():
 
 def test_pick_uses_every_page_when_all_are_saved():
     collection = FakeCollection(full_pages(50), saved=range(1, 51))
-    match = lambda r: r["title"] == "p42-3"
-    assert titles(rymspin.pick(collection, match=match, max_pages=1)[0]) == ["p42-3"]
+    picked, _ = rymspin.pick(collection, match=lambda r: r["title"] == "p42-3", max_pages=1)
+    assert titles(picked) == ["p42-3"]
 
 
 def test_pick_with_no_match_after_loading_everything():
@@ -61,8 +61,9 @@ def test_pick_with_no_match_after_loading_everything():
 
 def test_pick_weighted_prefers_heavier_releases():
     pages = [[release("good", rating="5.00"), release("bad", rating="0.50")]]
-    counts = collections.Counter(titles(rymspin.pick(FakeCollection(pages), weight=rymspin.rating_weight)[0])[0]
-                                 for _ in range(3000))
+    counts = collections.Counter(
+        titles(rymspin.pick(FakeCollection(pages), weight=rymspin.rating_weight)[0])[0] for _ in range(3000)
+    )
     assert 8 < counts["good"] / counts["bad"] < 12
 
 
@@ -71,8 +72,14 @@ def test_release_type():
 
 
 def test_filters():
-    match = rymspin.filters(types={"album"}, year_from=1970, year_to=1979, min_rating=4.0, max_rating=5.0,
-                               skip=[release("seen", year="1975", rating="4.50")["url"]])
+    match = rymspin.filters(
+        types={"album"},
+        year_from=1970,
+        year_to=1979,
+        min_rating=4.0,
+        max_rating=5.0,
+        skip=[release("seen", year="1975", rating="4.50")["url"]],
+    )
     assert match(release("x", year="1975", rating="4.50"))
     assert not match(release("seen", year="1975", rating="4.50"))
     assert not match(release("x", year="1975", rating="4.50", kind="ep"))

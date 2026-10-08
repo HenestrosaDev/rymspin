@@ -5,6 +5,12 @@
   <h1 align="center">rymspin</h1>
   <p align="center">Can't decide what to spin next? A command-line tool that picks a random release from the ones a <a href="https://rateyourmusic.com">Rate Your Music</a> user has rated.</p>
   <p>
+    <a href="https://github.com/HenestrosaDev/rymspin/actions/workflows/ci.yml">
+      <img
+        src="https://github.com/HenestrosaDev/rymspin/actions/workflows/ci.yml/badge.svg"
+        alt="CI"
+      />
+    </a>
     <a href="LICENSE">
       <img
         src="https://img.shields.io/badge/license-MIT-lightgray"
@@ -74,12 +80,17 @@ With `--weighted`, a picked release is kept with a probability of its rating div
 
   ```
   │   .gitignore
+  │   .pre-commit-config.yaml
   │   LICENSE
   │   pyproject.toml
   │   README.md
   │   requirements.txt
   │   requirements-dev.txt
   │   rymspin.py
+  │
+  ├───.github/
+  │   └───workflows/
+  │           ci.yml
   │
   └───tests/
       │   conftest.py
@@ -120,7 +131,7 @@ rymspin <user>
 
 1. Install [Google Chrome](https://www.google.com/chrome/) if you don't have it. The script uses your installed Chrome, so you don't need to run `playwright install`.
 2. Clone or download this repository and change the current working directory to its folder by running `cd rymspin`.
-3. (Optional but recommended) Create a Python virtual environment in the project root by running `python3 -m venv .venv`. **Python 3.9 or later** is required.
+3. (Optional but recommended) Create a Python virtual environment in the project root by running `python3 -m venv .venv`. **Python 3.10 or later** is required.
 4. (Optional but recommended) Activate the virtual environment:
    ```bash
    # on Windows
@@ -141,6 +152,7 @@ rymspin <user>
 - Before the project was renamed to rymspin, its data was stored in `~/.rym-random/`. The first run moves it to `~/.rymspin/`, so you keep your Cloudflare session, cache and history. If you set `RYM_RANDOM_HOME`, rename it to `RYMSPIN_HOME`.
 - Earlier versions stored the profile in `.rym_profile/` inside the project folder. You can delete it, or move it to `~/.rymspin/profile/` to keep your Cloudflare session.
 - To run the tests, install the development dependencies with `pip install -r requirements-dev.txt` (or `pip install -e ".[dev]"`) and run `pytest`. They use a saved page in `tests/fixtures/`, so they don't connect to RYM. If RYM changes the markup of its collection pages, update the fixture and the tests will show what broke.
+- The code is linted and formatted with [Ruff](https://docs.astral.sh/ruff/) and type-checked with [mypy](https://mypy-lang.org/), configured in `pyproject.toml`. Run `pre-commit install` once to check every commit, or `pre-commit run --all-files` to check everything now. GitHub Actions runs the same checks, and the tests on Python 3.10 to 3.14, on every push to `main` and every pull request.
 - The collection includes every type of release the user has rated, not only albums, so EPs, singles, compilations, etc. can also be picked.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
