@@ -35,7 +35,6 @@ from playwright.sync_api import sync_playwright
 BASE = "https://rateyourmusic.com"
 PER_PAGE = 25
 DATA_DIR = Path(os.environ.get("RYMSPIN_HOME") or Path.home() / ".rymspin")
-OLD_DATA_DIR = Path.home() / ".rym-random"  # used before the project was renamed to rymspin
 PROFILE_DIR = DATA_DIR / "profile"
 CACHE_DIR = DATA_DIR / "cache"
 CACHE_TTL = 6 * 3600  # seconds a saved page is reused
@@ -425,11 +424,9 @@ def filters(
 def load_history():
     """Picks of each user: {user: [{"url", "artist", "title", "year", "picked"}, ...]}, oldest first."""
     try:
-        history = json.loads(HISTORY_FILE.read_text())
+        return json.loads(HISTORY_FILE.read_text())
     except (OSError, ValueError):
         return {}
-    # Earlier versions only saved the URL of each pick.
-    return {user: [{"url": e} if isinstance(e, str) else e for e in entries] for user, entries in history.items()}
 
 
 def save_history(history, user, releases, today=None):
@@ -459,11 +456,8 @@ def format_history(entries):
     """Text shown for --history: one pick per line, with the date it was picked."""
     lines = []
     for e in entries:
-        if "title" in e:
-            year = f" ({e['year']})" if e["year"] else ""
-            lines.append(f"{e['picked']}  {e['artist']} - {e['title']}{year}  {e['url']}")
-        else:
-            lines.append(f"{'?':<10}  {e['url']}")
+        year = f" ({e['year']})" if e["year"] else ""
+        lines.append(f"{e['picked']}  {e['artist']} - {e['title']}{year}  {e['url']}")
     return "\n".join(lines)
 
 
@@ -536,12 +530,6 @@ def decade(value):
     if match is None:
         raise argparse.ArgumentTypeError(f"'{value}' is not a decade (use e.g. 1990s)")
     return int(match.group(1))
-
-
-def move_old_data():
-    """Move the folder of earlier versions to DATA_DIR to keep the Cloudflare session, cache and history."""
-    if OLD_DATA_DIR.is_dir() and not DATA_DIR.exists():
-        OLD_DATA_DIR.rename(DATA_DIR)
 
 
 def main():
@@ -617,7 +605,6 @@ def main():
         "--refresh", action="store_true", help="ignore the pages saved in the last hours and load them again"
     )
     args = parser.parse_args()
-    move_old_data()
     if args.history:
         show_history(args.user, args.history, args.json)
         return

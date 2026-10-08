@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="rymspin">
+  <title>rymspin</title>
+  <circle cx="64" cy="64" r="42" fill="#18181c" stroke="#45454f" stroke-width="1.5"/>
+  <g fill="none" stroke="#33333b" stroke-width="1.2">
+    <circle cx="64" cy="64" r="37"/>
+    <circle cx="64" cy="64" r="31.5"/>
+    <circle cx="64" cy="64" r="26"/>
+  </g>
+  <g fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="7" stroke-linecap="round">
+    <path d="M72.02 34.06A31 31 0 0 1 90.85 48.50"/><path d="M55.98 93.94A31 31 0 0 1 37.15 79.50"/>
+  </g>
+  <circle cx="64" cy="64" r="16" fill="#f0a030"/>
+  <circle cx="64" cy="64" r="3.5" fill="#18181c"/>
+  <g fill="none" stroke="#f0a030" stroke-width="7" stroke-linecap="round">
+    <path d="M11.84 50.02A54 54 0 0 1 108.77 33.80"/><path d="M116.16 77.98A54 54 0 0 1 19.23 94.20"/>
+  </g>
+  <g fill="#f0a030" stroke="#f0a030" stroke-width="2" stroke-linejoin="round">
+    <path d="M115.81 29.05L116.04 44.58L101.72 38.56Z"/><path d="M12.19 98.95L11.96 83.42L26.28 89.44Z"/>
+  </g>
+</svg>

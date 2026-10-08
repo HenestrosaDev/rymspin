@@ -107,11 +107,6 @@ def test_history_keeps_the_last_picks(monkeypatch):
     assert saved[0]["title"] == "2" and saved[0]["picked"]
 
 
-def test_history_reads_the_old_format():
-    rymspin.HISTORY_FILE.write_text('{"example_user": ["https://x/release/album/a/b/"]}')
-    assert rymspin.load_history() == {"example_user": [{"url": "https://x/release/album/a/b/"}]}
-
-
 def test_history_adds_a_release_once_per_day():
     history: dict = {}
     rymspin.save_history(history, "u", [release("a")], "2026-10-08")
@@ -122,25 +117,6 @@ def test_history_adds_a_release_once_per_day():
         ("b", "2026-10-08"),
         ("a", "2026-10-09"),
     ]
-
-
-def test_old_data_folder_is_moved(tmp_path, monkeypatch):
-    old, new = tmp_path / ".rym-random", tmp_path / ".rymspin"
-    (old / "profile").mkdir(parents=True)
-    monkeypatch.setattr(rymspin, "OLD_DATA_DIR", old)
-    monkeypatch.setattr(rymspin, "DATA_DIR", new)
-    rymspin.move_old_data()
-    assert (new / "profile").is_dir() and not old.exists()
-
-
-def test_old_data_folder_is_kept_if_the_new_one_exists(tmp_path, monkeypatch):
-    old, new = tmp_path / ".rym-random", tmp_path / ".rymspin"
-    old.mkdir()
-    new.mkdir()
-    monkeypatch.setattr(rymspin, "OLD_DATA_DIR", old)
-    monkeypatch.setattr(rymspin, "DATA_DIR", new)
-    rymspin.move_old_data()
-    assert old.is_dir()
 
 
 def test_collection_saves_pages_to_disk(fetcher):

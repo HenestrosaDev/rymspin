@@ -2,6 +2,7 @@
 
 <!-- PROJECT LOGO -->
 <div align="center">
+  <img src="assets/icon.svg" alt="rymspin icon" width="128" height="128" />
   <h1 align="center">rymspin</h1>
   <p align="center">Can't decide what to spin next? A command-line tool that picks a random release from the ones a <a href="https://rateyourmusic.com">Rate Your Music</a> user has rated.</p>
   <p>
@@ -95,6 +96,9 @@ With `--weighted`, a picked release is kept with a probability of its rating div
   │   requirements-dev.txt
   │   rymspin.py
   │
+  ├───assets/
+  │       icon.svg
+  │
   ├───.github/
   │   └───workflows/
   │           ci.yml
@@ -154,10 +158,8 @@ rymspin <user>
 
 - Chrome runs in the background without a window. If Cloudflare asks for a verification the headless browser can't pass, the script reopens Chrome with a visible window so you can tick the checkbox. Use `--show` to always show the window.
 - The Chrome profile is stored in `~/.rymspin/profile/`, so the Cloudflare session is reused between runs. Delete the folder to start from scratch. Set the `RYMSPIN_HOME` environment variable to use another folder.
-- The releases picked are saved in `~/.rymspin/history.json` (the last 1000 per user, each one once per day), which `--no-repeat` and `--history` use. Picks saved by earlier versions only have their link, so `--history` shows them without a date or title.
+- The releases picked are saved in `~/.rymspin/history.json` (the last 1000 per user, each one once per day), which `--no-repeat` and `--history` use.
 - Loaded pages are saved in `~/.rymspin/cache/` and reused for 6 hours (7 days for your whole collection with `--new-from`). Use `--refresh` to load them again, e.g. right after rating something new.
-- Before the project was renamed to rymspin, its data was stored in `~/.rym-random/`. The first run moves it to `~/.rymspin/`, so you keep your Cloudflare session, cache and history. If you set `RYM_RANDOM_HOME`, rename it to `RYMSPIN_HOME`.
-- Earlier versions stored the profile in `.rym_profile/` inside the project folder. You can delete it, or move it to `~/.rymspin/profile/` to keep your Cloudflare session.
 - To run the tests, install the development dependencies with `pip install -r requirements-dev.txt` (or `pip install -e ".[dev]"`) and run `pytest`. They use a saved page in `tests/fixtures/`, so they don't connect to RYM. If RYM changes the markup of its collection pages, update the fixture and the tests will show what broke.
 - The code is linted and formatted with [Ruff](https://docs.astral.sh/ruff/) and type-checked with [mypy](https://mypy-lang.org/), configured in `pyproject.toml`. Run `pre-commit install` once to check every commit, or `pre-commit run --all-files` to check everything now. GitHub Actions runs the same checks, and the tests on Python 3.10 to 3.14, on every push to `main` and every pull request.
 - The collection includes every type of release the user has rated, not only albums, so EPs, singles, compilations, etc. can also be picked.
