@@ -359,9 +359,15 @@ def rating_value(release):
         return None
 
 
-def rating_weight(release):
-    """Probability of keeping a release when picking weighted by rating."""
-    return (rating_value(release) or 0.5) / 5
+def rating_weight(release, top=5.0):
+    """Probability of keeping a release when picking weighted by rating.
+
+    It's the rating divided by `top`, the highest rating that can be picked, so
+    releases rated `top` are always kept. Dividing by 5 when only low ratings
+    can be picked would discard most picks, and each discarded pick can load a
+    new page.
+    """
+    return (rating_value(release) or 0.5) / top
 
 
 def filters(types=None, year_from=None, year_to=None, min_rating=None, max_rating=None, skip=()):
@@ -539,7 +545,11 @@ def main():
             searched_all = True
         else:
             picked, searched_all = pick(
-                collection, args.count, match, rating_weight if args.weighted else None, args.max_pages
+                collection,
+                args.count,
+                match,
+                (lambda release: rating_weight(release, args.max)) if args.weighted else None,
+                args.max_pages,
             )
     finally:
         fetcher.close()

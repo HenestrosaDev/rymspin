@@ -1,4 +1,5 @@
 import collections
+import random
 import time
 
 from conftest import FakeCollection, FakeFetcher, full_pages, release
@@ -60,6 +61,7 @@ def test_pick_with_no_match_after_loading_everything():
 
 
 def test_pick_weighted_prefers_heavier_releases():
+    random.seed(0)  # the ratio varies by chance, so make it repeatable
     pages = [[release("good", rating="5.00"), release("bad", rating="0.50")]]
     counts = collections.Counter(
         titles(rymspin.pick(FakeCollection(pages), weight=rymspin.rating_weight)[0])[0] for _ in range(3000)
@@ -185,3 +187,10 @@ def test_shared_releases():
     assert titles(shared) == ["a"]
     assert shared[0]["other"] == {"user": "other_user", "rating": "2.00"}
     assert rymspin.shared_weight(shared[0]) == (0.8 + 0.4) / 2
+
+
+def test_rating_weight_is_relative_to_the_highest_rating():
+    assert rymspin.rating_weight(release("x", rating="2.50")) == 0.5
+    assert rymspin.rating_weight(release("x", rating="1.00"), top=1.0) == 1.0
+    assert rymspin.rating_weight(release("x", rating="0.50"), top=1.0) == 0.5
+    assert rymspin.rating_weight(release("x", rating="?"), top=1.0) == 0.5
