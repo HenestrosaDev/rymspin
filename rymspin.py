@@ -2,13 +2,13 @@
 """Pick a random release from the ones a Rate Your Music user has rated.
 
 Usage:
-    python rym_random.py USER [--min 0.5] [--max 5.0] [-n 1] [--type album ep]
+    python rymspin.py USER [--min 0.5] [--max 5.0] [-n 1] [--type album ep]
                               [--from 1970] [--to 1979] [--tag TAG] [--weighted]
                               [--no-repeat 50] [--details] [--links] [--json]
                               [--open] [--with OTHER_USER] [--show] [--refresh]
 
 RYM is behind Cloudflare, so a real Chrome controlled with Playwright is used.
-The profile is stored in ~/.rym-random/profile/ (or $RYM_RANDOM_HOME) to reuse the Cloudflare cookie between
+The profile is stored in ~/.rymspin/profile/ (or $RYMSPIN_HOME) to reuse the Cloudflare cookie between
 runs. The browser runs without a window; one only opens if Cloudflare asks for
 a verification (or with --show).
 """
@@ -30,7 +30,8 @@ from playwright.sync_api import sync_playwright
 
 BASE = "https://rateyourmusic.com"
 PER_PAGE = 25
-DATA_DIR = Path(os.environ.get("RYM_RANDOM_HOME") or Path.home() / ".rym-random")
+DATA_DIR = Path(os.environ.get("RYMSPIN_HOME") or Path.home() / ".rymspin")
+OLD_DATA_DIR = Path.home() / ".rym-random"  # used before the project was renamed to rymspin
 PROFILE_DIR = DATA_DIR / "profile"
 CACHE_DIR = DATA_DIR / "cache"
 CACHE_TTL = 6 * 3600  # seconds a saved page is reused
@@ -423,6 +424,12 @@ def positive(value):
     return n
 
 
+def move_old_data():
+    """Move the folder of earlier versions to DATA_DIR to keep the Cloudflare session, cache and history."""
+    if OLD_DATA_DIR.is_dir() and not DATA_DIR.exists():
+        OLD_DATA_DIR.rename(DATA_DIR)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("user", help="RYM username")
@@ -445,6 +452,7 @@ def main():
     parser.add_argument("--show", action="store_true", help="always show the browser window")
     parser.add_argument("--refresh", action="store_true", help="ignore the pages saved in the last hours and load them again")
     args = parser.parse_args()
+    move_old_data()
     if args.min > args.max:
         parser.error(f"--min ({args.min}) can't be greater than --max ({args.max})")
     if args.year_from is not None and args.year_to is not None and args.year_from > args.year_to:

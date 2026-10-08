@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "rym-random-rated-album"
+name = "rymspin"
 version = "0.1.0"
 description = "Pick a random release from the ones a Rate Your Music user has rated."
 readme = "README.md"
@@ -16,10 +16,10 @@ dependencies = ["playwright", "beautifulsoup4"]
 dev = ["pytest"]
 
 [project.scripts]
-rym-random = "rym_random:main"
+rymspin = "rymspin:main"
 
 [tool.setuptools]
-py-modules = ["rym_random"]
+py-modules = ["rymspin"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
