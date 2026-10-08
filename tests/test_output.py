@@ -2,7 +2,7 @@ import json
 import sys
 
 import pytest
-from conftest import release
+from conftest import FIXTURES, FakeFetcher, release
 
 import rymspin
 
@@ -105,3 +105,102 @@ def test_main_with_other_user_without_shared_releases(run, fetcher, monkeypatch)
     monkeypatch.setattr(rymspin, "last_page", lambda soup: 1)
     with pytest.raises(SystemExit, match="No release rated by both"):
         run("--with", "other_user", "--from", "2030")
+
+
+def test_main_history_shows_previous_picks_without_loading_pages(run, fetcher, monkeypatch):
+    monkeypatch.setattr(rymspin, "last_page", lambda soup: 1)
+    run("-n", "3")
+    fetcher.urls.clear()
+    (out, _), _ = run("--history")
+    lines = out.splitlines()
+    assert len(lines) == 3 and all("https://rateyourmusic.com/release/" in line for line in lines)
+    assert fetcher.urls == []
+    (out, _), _ = run("--history", "1", "--json")
+    assert len(json.loads(out)) == 1
+
+
+def test_main_history_without_picks(run):
+    with pytest.raises(SystemExit, match="No releases picked"):
+        run("--history")
+
+
+def test_main_daily_keeps_the_same_pick_all_day(run, monkeypatch):
+    monkeypatch.setattr(rymspin, "last_page", lambda soup: 1)
+    picks = {run("--daily", "--no-repeat", "5")[0][0] for _ in range(5)}
+    assert len(picks) == 1
+    assert len(rymspin.load_history()["example_user"]) == 1
+
+
+def test_main_seed_repeats_the_picks(run, monkeypatch):
+    monkeypatch.setattr(rymspin, "last_page", lambda soup: 1)
+    assert run("--seed", "x", "-n", "2")[0][0] == run("--seed", "x", "-n", "2")[0][0]
+
+
+def test_main_seed_and_no_repeat_are_rejected(run):
+    with pytest.raises(SystemExit):
+        run("--seed", "x", "--no-repeat", "5")
+
+
+def test_main_decade(run, monkeypatch):
+    monkeypatch.setattr(rymspin, "last_page", lambda soup: 1)
+    (out, _), _ = run("--decade", "2010s", "-n", "3", "--json")
+    assert [p["title"] for p in json.loads(out)] == ["First Record"]
+    with pytest.raises(SystemExit):
+        run("--decade", "2010s", "--from", "2012")
+
+
+def test_main_rated_from_and_to(run, monkeypatch):
+    monkeypatch.setattr(rymspin, "last_page", lambda soup: 1)
+    (out, _), _ = run("--rated-from", "2019-07", "--rated-to", "2020", "-n", "3", "--json")
+    assert [p["title"] for p in json.loads(out)] == ["Split"]
+    with pytest.raises(SystemExit):
+        run("--rated-from", "2020", "--rated-to", "2019")
+
+
+class TwoUserFetcher(FakeFetcher):
+    """Serves the fixture page for other_user and the same page without "First Record" for example_user."""
+
+    def get(self, url):
+        soup = super().get(url)
+        if "/example_user/" in url:
+            soup.find("tr", id="page_catalog_item_101").decompose()
+        return soup
+
+    def close(self):
+        pass
+
+
+@pytest.fixture
+def two_users(monkeypatch):
+    fetcher = TwoUserFetcher((FIXTURES / "collection.html").read_text())
+    monkeypatch.setattr(rymspin, "Fetcher", lambda headless: fetcher)
+    monkeypatch.setattr(rymspin, "last_page", lambda soup: 1)
+    return fetcher
+
+
+def test_main_new_from_picks_releases_the_user_has_not_rated(run, two_users):
+    (out, err), _ = run("--new-from", "other_user", "-n", "3", "--json")
+    picks = json.loads(out)
+    assert [p["title"] for p in picks] == ["First Record"]
+    assert picks[0]["rated_by"] == "other_user"
+    assert "Only 1 release matches" in err
+    assert any("/collection/example_user/r0.5-5.0" in url for url in two_users.urls)
+    (out, _), _ = run("--new-from", "other_user", "--details")
+    assert "Rating of other_user: 4.50" in out and "Rated on (by other_user): 2019-06-08" in out
+
+
+def test_main_new_from_without_new_releases(run, two_users):
+    with pytest.raises(SystemExit, match="not rated by 'example_user'"):
+        run("--new-from", "other_user", "--type", "ep")
+
+
+def test_main_new_from_stops_at_max_pages(run, fetcher, monkeypatch):
+    # The fixture says there are 12 pages, more than --max-pages allows.
+    with pytest.raises(SystemExit, match="Run the same command again"):
+        run("--new-from", "other_user", "--max-pages", "3")
+    assert len(fetcher.urls) == 1 + 1 + 3  # page 1 of each user and 3 more of example_user
+
+
+def test_main_new_from_and_tag_are_rejected(run):
+    with pytest.raises(SystemExit):
+        run("--new-from", "other_user", "--tag", "night")

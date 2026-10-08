@@ -1,7 +1,9 @@
+import argparse
 import collections
 import random
 import time
 
+import pytest
 from conftest import FakeCollection, FakeFetcher, full_pages, release
 
 import rymspin
@@ -101,7 +103,25 @@ def test_history_keeps_the_last_picks(monkeypatch):
     history = rymspin.load_history()
     rymspin.save_history(history, "Example_User", [release(str(i)) for i in range(5)])
     saved = rymspin.load_history()["example_user"]
-    assert [url.split("/")[-2] for url in saved] == ["2", "3", "4"]
+    assert [e["url"].split("/")[-2] for e in saved] == ["2", "3", "4"]
+    assert saved[0]["title"] == "2" and saved[0]["picked"]
+
+
+def test_history_reads_the_old_format():
+    rymspin.HISTORY_FILE.write_text('{"example_user": ["https://x/release/album/a/b/"]}')
+    assert rymspin.load_history() == {"example_user": [{"url": "https://x/release/album/a/b/"}]}
+
+
+def test_history_adds_a_release_once_per_day():
+    history: dict = {}
+    rymspin.save_history(history, "u", [release("a")], "2026-10-08")
+    rymspin.save_history(history, "u", [release("a"), release("b")], "2026-10-08")
+    rymspin.save_history(history, "u", [release("a")], "2026-10-09")
+    assert [(e["title"], e["picked"]) for e in history["u"]] == [
+        ("a", "2026-10-08"),
+        ("b", "2026-10-08"),
+        ("a", "2026-10-09"),
+    ]
 
 
 def test_old_data_folder_is_moved(tmp_path, monkeypatch):
@@ -194,3 +214,46 @@ def test_rating_weight_is_relative_to_the_highest_rating():
     assert rymspin.rating_weight(release("x", rating="1.00"), top=1.0) == 1.0
     assert rymspin.rating_weight(release("x", rating="0.50"), top=1.0) == 0.5
     assert rymspin.rating_weight(release("x", rating="?"), top=1.0) == 0.5
+
+
+def test_filters_by_rating_date():
+    match = rymspin.filters(rated_from="2015-01-01", rated_to="2019-12-31")
+    assert match(dict(release("x"), rated="2015-01-01"))
+    assert match(dict(release("x"), rated="2019-12-31"))
+    assert not match(dict(release("x"), rated="2020-01-01"))
+    assert not match(dict(release("x"), rated=""))
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("2019", ("2019-01-01", "2019-12-31")),
+        ("2024-02", ("2024-02-01", "2024-02-29")),
+        ("2019-12", ("2019-12-01", "2019-12-31")),
+        ("2019-06-08", ("2019-06-08", "2019-06-08")),
+    ],
+)
+def test_date_range(value, expected):
+    assert rymspin.date_range(value) == expected
+
+
+@pytest.mark.parametrize("value", ["19", "2019-13", "2019-02-30", "June 2019"])
+def test_date_range_rejects_bad_dates(value):
+    with pytest.raises(argparse.ArgumentTypeError):
+        rymspin.date_range(value)
+
+
+def test_decade():
+    assert rymspin.decade("1990s") == rymspin.decade("1990") == 1990
+    for value in ["1995", "90s", "199x"]:
+        with pytest.raises(argparse.ArgumentTypeError):
+            rymspin.decade(value)
+
+
+def test_stable_pick_does_not_depend_on_saved_pages():
+    results = []
+    for saved in [(), range(1, 5)]:
+        random.seed("same seed")
+        picked, _ = rymspin.pick(FakeCollection(full_pages(4), saved=saved), count=3, stable=True)
+        results.append(titles(picked))
+    assert results[0] == results[1]

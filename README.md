@@ -49,15 +49,18 @@
 
 - **Any user**: works with the public collection of any RYM user.
 - **Rating filter**: limit the choice to a range of ratings, e.g. only the releases rated 4.5 or higher.
-- **More filters**: release type (album, EP, single...), year range and the user's own tags.
+- **More filters**: release type (album, EP, single...), year range or decade, the user's own tags and the date the release was rated, e.g. to rediscover something rated years ago.
 - **Several picks**: pick any number of different releases at once.
 - **Weighted choice**: optionally make higher-rated releases more likely.
 - **No repeats**: optionally skip the releases picked in recent runs.
 - **Shared picks**: pick a release that two users have both rated in a range, e.g. to find something you both love.
+- **Recommendations from a friend**: pick a release another user rated highly that you haven't rated yet.
+- **Release of the day**: `--daily` picks the same release all day, and `--seed` repeats the picks of any seed.
+- **History**: list the releases picked in earlier runs.
 - **Output options**: JSON output, search links for Spotify, YouTube and Bandcamp, the cover, rating date and tags, and opening the picks in the browser.
 - **Uniform choice**: every release has the same probability of being picked, whatever page it's on.
 - **Few requests**: usually only about two pages are loaded on each run, instead of the whole collection, and never more than `--max-pages`, so it's fast and unlikely to get your IP blocked by RYM.
-- **Cache**: loaded pages are saved for 6 hours, so repeated runs are instant and don't even open Chrome.
+- **Cache**: loaded pages are saved for 6 hours, so repeated runs are instant and don't even open Chrome. `--history` never opens it.
 
 ### How It Works
 
@@ -65,9 +68,13 @@ Rate Your Music is protected by Cloudflare, which blocks plain HTTP requests and
 
 To choose a release, it loads the first page to know how many pages the collection has (25 releases per page), picks a random page and a random position on it, and loads that page. If the position doesn't exist (which can only happen on the last page, as it's usually incomplete), it picks again. This way the choice is uniform without downloading every page.
 
-RYM can only limit the collection by rating, so the other filters (type, year, previous picks) are checked on each picked release: if it doesn't match, the script picks again, loading a new page when needed. This keeps the choice uniform, but a filter that few releases match needs many pages. RYM blocks your IP for a few hours if you load pages too quickly, so the script waits 3 seconds between pages and loads at most 5 pages per run by default (`--max-pages`). Pages saved by earlier runs don't count, so repeated runs find more and more matches.
+RYM can only limit the collection by rating, so the other filters (type, year, rating date, previous picks) are checked on each picked release: if it doesn't match, the script picks again, loading a new page when needed. This keeps the choice uniform, but a filter that few releases match needs many pages. RYM blocks your IP for a few hours if you load pages too quickly, so the script waits 3 seconds between pages and loads at most 5 pages per run by default (`--max-pages`). Pages saved by earlier runs don't count, so repeated runs find more and more matches.
 
 With `--with OTHER_USER`, it needs to know every release both users rated in the range, so it reads both collections whole instead. It still loads at most `--max-pages` pages per run: if the collections have more, it stops and the next run goes on from the saved pages. A high `--min` keeps the collections small, e.g. `--min 4.5` usually fits in a few pages.
+
+With `--new-from OTHER_USER`, it needs to know every release you rated, so it reads your whole collection first (all ratings, whatever `--min` and `--max` are), also loading at most `--max-pages` pages per run. As your collection changes slowly, its pages are kept for 7 days instead of 6 hours, so a big collection can be read over several runs. Then it picks from the other user's collection like in a normal run, skipping the releases you rated.
+
+With `--daily` or `--seed`, the random choices start from a fixed seed (with `--daily`, made from the username and today's date), so the same options give the same picks. The picks don't depend on which pages are saved, but they change if the collection or the options change. `--daily` with `--no-repeat` only skips the releases picked before today, so the release of the day stays the same all day.
 
 With `--weighted`, a picked release is kept with a probability of its rating divided by `--max` (5.0 by default), so a 5.0 is twice as likely as a 2.5 and ten times as likely as a 0.5. Dividing by `--max` rather than by 5 means the highest ratings in the range are always kept, so a low `--max` doesn't discard most picks and load extra pages.
 
@@ -147,8 +154,8 @@ rymspin <user>
 
 - Chrome runs in the background without a window. If Cloudflare asks for a verification the headless browser can't pass, the script reopens Chrome with a visible window so you can tick the checkbox. Use `--show` to always show the window.
 - The Chrome profile is stored in `~/.rymspin/profile/`, so the Cloudflare session is reused between runs. Delete the folder to start from scratch. Set the `RYMSPIN_HOME` environment variable to use another folder.
-- The releases picked are saved in `~/.rymspin/history.json` (the last 1000 per user), which `--no-repeat` uses.
-- Loaded pages are saved in `~/.rymspin/cache/` and reused for 6 hours. Use `--refresh` to load them again, e.g. right after rating something new.
+- The releases picked are saved in `~/.rymspin/history.json` (the last 1000 per user, each one once per day), which `--no-repeat` and `--history` use. Picks saved by earlier versions only have their link, so `--history` shows them without a date or title.
+- Loaded pages are saved in `~/.rymspin/cache/` and reused for 6 hours (7 days for your whole collection with `--new-from`). Use `--refresh` to load them again, e.g. right after rating something new.
 - Before the project was renamed to rymspin, its data was stored in `~/.rym-random/`. The first run moves it to `~/.rymspin/`, so you keep your Cloudflare session, cache and history. If you set `RYM_RANDOM_HOME`, rename it to `RYMSPIN_HOME`.
 - Earlier versions stored the profile in `.rym_profile/` inside the project folder. You can delete it, or move it to `~/.rymspin/profile/` to keep your Cloudflare session.
 - To run the tests, install the development dependencies with `pip install -r requirements-dev.txt` (or `pip install -e ".[dev]"`) and run `pytest`. They use a saved page in `tests/fixtures/`, so they don't connect to RYM. If RYM changes the markup of its collection pages, update the fixture and the tests will show what broke.
@@ -175,7 +182,10 @@ python rymspin.py example_user --min 1 --max 2.5
 python rymspin.py example_user -n 5
 
 # Pick an EP or a single from the 90s
-python rymspin.py example_user --type ep single --from 1990 --to 1999
+python rymspin.py example_user --type ep single --decade 1990s
+
+# Rediscover a release rated 4 or higher before 2020
+python rymspin.py example_user --min 4 --rated-to 2019
 
 # Pick a release the user tagged "night" and rated 4 or higher
 python rymspin.py example_user --tag night --min 4
@@ -191,6 +201,15 @@ python rymspin.py example_user -n 3 --json --open
 
 # Pick a release that both users rated 4.5 or higher
 python rymspin.py example_user --with another_user --min 4.5
+
+# Pick a release that another user rated 4.5 or higher and you haven't rated
+python rymspin.py example_user --new-from another_user --min 4.5
+
+# Pick the release of the day, never repeating the last 100
+python rymspin.py example_user --daily --no-repeat 100
+
+# Show the last 20 releases picked
+python rymspin.py example_user --history
 
 # Always show the Chrome window
 python rymspin.py example_user --show
@@ -212,15 +231,21 @@ https://rateyourmusic.com/release/album/liars/mess/
 | `-n`, `--count` | Number of different releases to pick. | `1` |
 | `--type` | Only pick these release types: `album`, `ep`, `single`, `comp`, `mixtape`, `djmix`, `musicvideo`, `video`, `additional`, `bootleg`, `unauth`. | all |
 | `--from`, `--to` | Only pick releases from this range of years. Releases without a year are skipped. | all |
+| `--decade` | Only pick releases from this decade, e.g. `1990s`. Can't be used with `--from` or `--to`. | all |
 | `--tag` | Only pick releases the user tagged with this tag. | all |
+| `--rated-from`, `--rated-to` | Only pick releases rated in this range of dates, as `YYYY`, `YYYY-MM` or `YYYY-MM-DD` (both ends included, so `--rated-to 2019` includes all of 2019). Releases without a rating date are skipped. | all |
 | `--weighted` | Make higher-rated releases more likely to be picked. | off |
 | `--no-repeat` | Skip the last N releases picked for this user. | off |
+| `--seed` | Pick the same releases every time this seed is used with the same options. Can't be used with `--no-repeat`. | off |
+| `--daily` | Pick the same releases all day, a different one each day. | off |
 | `--max-pages` | Pages to load from RYM at most when filters skip releases. | `5` |
 | `--details` | Also show the release type, the date it was rated, the user's tags and the cover. | off |
 | `--links` | Also show search links for Spotify, YouTube and Bandcamp. | off |
 | `--json` | Print the picks as a JSON list, with every field (and the links with `--links`). | off |
 | `--open` | Open the picks on RYM in the web browser. | off |
 | `--with` | Only pick releases that this other user also rated within `--min` and `--max`. Both ratings are shown. | off |
+| `--new-from` | Pick releases that this other user rated within `--min` and `--max` and you haven't rated. Their rating, date and tags are shown. Can't be used with `--with` or `--tag`. | off |
+| `--history` | Show the last N releases picked for this user (20 by default) instead of picking, without loading any page. Works with `--json`. | off |
 | `--show` | Always show the Chrome window. | off |
 | `--refresh` | Ignore the pages saved in the last 6 hours and load them again. | off |
 
@@ -239,6 +264,7 @@ Run `python rymspin.py --help` to see all the options.
 - **`RYM has temporarily blocked your IP`**: too many pages were loaded in a short time. The block lifts by itself after a few hours; until then, the script can only use the pages it already saved. Use a lower `--max-pages`, or fewer filters, afterwards.
 - **`Stopped after loading N pages without finding enough releases`**: the filters match few releases. Run the script again later (the pages loaded so far are saved, so each run searches new ones) or raise `--max-pages` a little.
 - **`Loaded N more pages of the two collections, but they have more`**: with `--with`, both collections have to be read whole, which takes several runs if they are big. Run the same command again in a while, or use a higher `--min`.
+- **`Loaded N more pages of the collection of '<user>', but it has more`**: with `--new-from`, your whole collection has to be read, which takes several runs if it's big. Run the same command again in a while; the pages are kept for 7 days.
 - **Chrome doesn't open**: Playwright looks for Google Chrome in its default location. Make sure it's installed (Chromium or other browsers aren't used).
 
 <p align="right">(<a href="#top">back to top</a>)</p>

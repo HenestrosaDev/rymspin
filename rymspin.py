@@ -3,17 +3,21 @@
 
 Usage:
     python rymspin.py USER [--min 0.5] [--max 5.0] [-n 1] [--type album ep]
-                              [--from 1970] [--to 1979] [--tag TAG] [--weighted]
-                              [--no-repeat 50] [--details] [--links] [--json]
-                              [--open] [--with OTHER_USER] [--show] [--refresh]
+                           [--from 1970] [--to 1979] [--decade 1970s] [--tag TAG]
+                           [--rated-from 2015] [--rated-to 2019-06] [--weighted]
+                           [--no-repeat 50] [--seed SEED | --daily] [--max-pages 5]
+                           [--details] [--links] [--json] [--open] [--show] [--refresh]
+                           [--with OTHER_USER | --new-from OTHER_USER]
+    python rymspin.py USER --history [20] [--json]
 
 RYM is behind Cloudflare, so a real Chrome controlled with Playwright is used.
-The profile is stored in ~/.rymspin/profile/ (or $RYMSPIN_HOME) to reuse the Cloudflare cookie between
-runs. The browser runs without a window; one only opens if Cloudflare asks for
-a verification (or with --show).
+The profile is stored in ~/.rymspin/profile/ (or $RYMSPIN_HOME) to reuse the
+Cloudflare cookie between runs. The browser runs without a window; one only
+opens if Cloudflare asks for a verification (or with --show).
 """
 
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -35,6 +39,7 @@ OLD_DATA_DIR = Path.home() / ".rym-random"  # used before the project was rename
 PROFILE_DIR = DATA_DIR / "profile"
 CACHE_DIR = DATA_DIR / "cache"
 CACHE_TTL = 6 * 3600  # seconds a saved page is reused
+OWN_COLLECTION_TTL = 7 * 24 * 3600  # for --new-from, which reads the user's whole collection
 CACHE_VERSION = 2  # change when parse_rows() returns different fields
 HISTORY_FILE = DATA_DIR / "history.json"
 HISTORY_SIZE = 1000  # picks remembered per user
@@ -135,10 +140,11 @@ class Fetcher:
 class Collection:
     """Pages of a collection URL, saved to disk for CACHE_TTL seconds."""
 
-    def __init__(self, fetcher, url, refresh=False):
+    def __init__(self, fetcher, url, refresh=False, ttl=CACHE_TTL):
         self.fetcher = fetcher
         self.url = url
         self.refresh = refresh
+        self.ttl = ttl
         self._pages = {}
 
     def page(self, number):
@@ -168,7 +174,7 @@ class Collection:
             return None
         try:
             saved = json.loads(self._path(number).read_text())
-            if time.time() - saved["time"] < CACHE_TTL:
+            if time.time() - saved["time"] < self.ttl:
                 return saved["rows"], saved["pages"]
         except (OSError, ValueError, KeyError):
             pass
@@ -256,7 +262,7 @@ def release_type(release):
     return release["url"][len(BASE) :].split("/")[2]
 
 
-def pick(collection, count=1, match=None, weight=None, max_pages=MAX_PAGES):
+def pick(collection, count=1, match=None, weight=None, max_pages=MAX_PAGES, stable=False):
     """Pick up to `count` different releases at random from the collection.
 
     Picks a random page and position; if the position doesn't exist (only
@@ -269,6 +275,10 @@ def pick(collection, count=1, match=None, weight=None, max_pages=MAX_PAGES):
     Returns the picks and whether the whole collection was searched; if it
     wasn't, the search stopped after loading `max_pages` pages from RYM (pages
     saved by earlier runs don't count).
+
+    With `stable`, it doesn't pick directly among the releases when every page
+    happens to be saved, so the picks only depend on the random state (as set
+    by --seed or --daily) and not on which pages earlier runs saved.
     """
     match = match or (lambda release: True)
     weight = weight or (lambda release: 1.0)
@@ -282,7 +292,7 @@ def pick(collection, count=1, match=None, weight=None, max_pages=MAX_PAGES):
     requests = 0
     picked: list[dict] = []
     while len(picked) < count:
-        if len(loaded) < pages and all(collection.is_available(n) for n in range(1, pages + 1)):
+        if not stable and len(loaded) < pages and all(collection.is_available(n) for n in range(1, pages + 1)):
             loaded = set(range(1, pages + 1))
         if len(loaded) >= pages:
             left = [r for n in sorted(loaded) for r in rows(n) if match(r) and r not in picked]
@@ -370,8 +380,14 @@ def rating_weight(release, top=5.0):
     return (rating_value(release) or 0.5) / top
 
 
-def filters(types=None, year_from=None, year_to=None, min_rating=None, max_rating=None, skip=()):
-    """Build the `match` function of pick() from the command-line filters."""
+def filters(
+    types=None, year_from=None, year_to=None, min_rating=None, max_rating=None, skip=(), rated_from=None, rated_to=None
+):
+    """Build the `match` function of pick() from the command-line filters.
+
+    `rated_from` and `rated_to` are dates as YYYY-MM-DD strings, compared with
+    the date each release was rated.
+    """
     skip = set(skip)
 
     def match(release):
@@ -393,22 +409,45 @@ def filters(types=None, year_from=None, year_to=None, min_rating=None, max_ratin
                 or (max_rating is not None and value > max_rating)
             ):
                 return False
+        if rated_from is not None or rated_to is not None:
+            rated = release.get("rated", "")
+            if (
+                not rated
+                or (rated_from is not None and rated < rated_from)
+                or (rated_to is not None and rated > rated_to)
+            ):
+                return False
         return True
 
     return match
 
 
 def load_history():
+    """Picks of each user: {user: [{"url", "artist", "title", "year", "picked"}, ...]}, oldest first."""
     try:
-        return json.loads(HISTORY_FILE.read_text())
+        history = json.loads(HISTORY_FILE.read_text())
     except (OSError, ValueError):
         return {}
+    # Earlier versions only saved the URL of each pick.
+    return {user: [{"url": e} if isinstance(e, str) else e for e in entries] for user, entries in history.items()}
 
 
-def save_history(history, user, releases):
-    """Add the picked releases to the user's history, keeping the last HISTORY_SIZE."""
+def save_history(history, user, releases, today=None):
+    """Add the picked releases to the user's history, keeping the last HISTORY_SIZE.
+
+    A release already picked on the same day isn't added again, so running
+    --daily (or the same --seed) several times doesn't fill the history.
+    """
     key = user.lower()
-    history[key] = (history.get(key, []) + [r["url"] for r in releases])[-HISTORY_SIZE:]
+    today = today or datetime.date.today().isoformat()
+    entries = history.get(key, [])
+    picked_today = {e["url"] for e in entries if e.get("picked") == today}
+    new = [
+        {"url": r["url"], "artist": r["artist"], "title": r["title"], "year": r["year"], "picked": today}
+        for r in releases
+        if r["url"] not in picked_today
+    ]
+    history[key] = (entries + new)[-HISTORY_SIZE:]
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         HISTORY_FILE.write_text(json.dumps(history, indent=1))
@@ -416,18 +455,33 @@ def save_history(history, user, releases):
         pass
 
 
+def format_history(entries):
+    """Text shown for --history: one pick per line, with the date it was picked."""
+    lines = []
+    for e in entries:
+        if "title" in e:
+            year = f" ({e['year']})" if e["year"] else ""
+            lines.append(f"{e['picked']}  {e['artist']} - {e['title']}{year}  {e['url']}")
+        else:
+            lines.append(f"{'?':<10}  {e['url']}")
+    return "\n".join(lines)
+
+
 def format_release(release, details=False, links=False):
     """Text shown for a picked release."""
     year = f" ({release['year']})" if release["year"] else ""
-    lines = [f"{release['artist']} - {release['title']}{year}", f"Rating: {release['rating']}"]
+    # With --new-from, the rating, date and tags are the other user's.
+    by = f" (by {release['rated_by']})" if release.get("rated_by") else ""
+    rating_label = f"Rating of {release['rated_by']}" if by else "Rating"
+    lines = [f"{release['artist']} - {release['title']}{year}", f"{rating_label}: {release['rating']}"]
     if release.get("other"):
         lines.append(f"Rating of {release['other']['user']}: {release['other']['rating']}")
     if details:
         lines.append(f"Type: {release_type(release)}")
         if release.get("rated"):
-            lines.append(f"Rated on: {release['rated']}")
+            lines.append(f"Rated on{by}: {release['rated']}")
         if release.get("tags"):
-            lines.append(f"Tags: {', '.join(release['tags'])}")
+            lines.append(f"Tags{by}: {', '.join(release['tags'])}")
         if release.get("cover"):
             lines.append(f"Cover: {release['cover']}")
     lines.append(release["url"])
@@ -459,6 +513,31 @@ def positive(value):
     return n
 
 
+def date_range(value):
+    """argparse type for a date as YYYY, YYYY-MM or YYYY-MM-DD: its first and last days, as YYYY-MM-DD."""
+    for fmt in ("%Y-%m-%d", "%Y-%m", "%Y"):
+        try:
+            first = datetime.datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+        if fmt == "%Y-%m-%d":
+            last = first
+        elif fmt == "%Y-%m":
+            last = (first + datetime.timedelta(days=31)).replace(day=1) - datetime.timedelta(days=1)
+        else:
+            last = first.replace(month=12, day=31)
+        return first.isoformat(), last.isoformat()
+    raise argparse.ArgumentTypeError(f"'{value}' is not a date (use YYYY, YYYY-MM or YYYY-MM-DD)")
+
+
+def decade(value):
+    """argparse type for a decade such as 1990s or 1990: its first year."""
+    match = re.fullmatch(r"(\d{3}0)s?", value)
+    if match is None:
+        raise argparse.ArgumentTypeError(f"'{value}' is not a decade (use e.g. 1990s)")
+    return int(match.group(1))
+
+
 def move_old_data():
     """Move the folder of earlier versions to DATA_DIR to keep the Cloudflare session, cache and history."""
     if OLD_DATA_DIR.is_dir() and not DATA_DIR.exists():
@@ -482,9 +561,25 @@ def main():
     parser.add_argument(
         "--to", dest="year_to", type=int, metavar="YEAR", help="only pick releases from this year or earlier"
     )
+    parser.add_argument("--decade", type=decade, help="only pick releases from this decade, e.g. 1990s")
     parser.add_argument("--tag", help="only pick releases the user tagged with this tag")
+    parser.add_argument(
+        "--rated-from",
+        type=date_range,
+        metavar="DATE",
+        help="only pick releases rated on this date (YYYY, YYYY-MM or YYYY-MM-DD) or later",
+    )
+    parser.add_argument(
+        "--rated-to",
+        type=date_range,
+        metavar="DATE",
+        help="only pick releases rated on this date (YYYY, YYYY-MM or YYYY-MM-DD) or earlier",
+    )
     parser.add_argument("--weighted", action="store_true", help="make higher-rated releases more likely to be picked")
     parser.add_argument("--no-repeat", type=positive, metavar="N", help="skip the last N releases picked for this user")
+    seeds = parser.add_mutually_exclusive_group()
+    seeds.add_argument("--seed", help="pick the same releases every time this seed is used (with the same options)")
+    seeds.add_argument("--daily", action="store_true", help="pick the same releases all day: a release of the day")
     parser.add_argument(
         "--max-pages",
         type=positive,
@@ -497,11 +592,25 @@ def main():
     parser.add_argument("--links", action="store_true", help="also show search links for Spotify, YouTube and Bandcamp")
     parser.add_argument("--json", action="store_true", help="print the picks as JSON")
     parser.add_argument("--open", action="store_true", help="open the picks on RYM in the web browser")
-    parser.add_argument(
+    others = parser.add_mutually_exclusive_group()
+    others.add_argument(
         "--with",
         dest="other_user",
         metavar="OTHER_USER",
         help="only pick releases that OTHER_USER also rated within --min and --max",
+    )
+    others.add_argument(
+        "--new-from",
+        metavar="OTHER_USER",
+        help="pick releases that OTHER_USER rated within --min and --max and USER hasn't rated",
+    )
+    parser.add_argument(
+        "--history",
+        type=positive,
+        nargs="?",
+        const=20,
+        metavar="N",
+        help="show the last N releases picked for this user (default 20) instead of picking",
     )
     parser.add_argument("--show", action="store_true", help="always show the browser window")
     parser.add_argument(
@@ -509,18 +618,43 @@ def main():
     )
     args = parser.parse_args()
     move_old_data()
+    if args.history:
+        show_history(args.user, args.history, args.json)
+        return
     if args.min > args.max:
         parser.error(f"--min ({args.min}) can't be greater than --max ({args.max})")
+    if args.decade is not None:
+        if args.year_from is not None or args.year_to is not None:
+            parser.error("--decade can't be used with --from or --to")
+        args.year_from, args.year_to = args.decade, args.decade + 9
     if args.year_from is not None and args.year_to is not None and args.year_from > args.year_to:
         parser.error(f"--from ({args.year_from}) can't be later than --to ({args.year_to})")
+    rated_from = args.rated_from[0] if args.rated_from else None
+    rated_to = args.rated_to[1] if args.rated_to else None
+    if rated_from and rated_to and rated_from > rated_to:
+        parser.error(f"--rated-from ({rated_from}) can't be later than --rated-to ({rated_to})")
+    if args.seed is not None and args.no_repeat:
+        parser.error("--no-repeat can't be used with --seed, as it would change the picks on each run")
+    if args.new_from and args.tag:
+        parser.error("--tag can't be used with --new-from")
     types = {t.lower() for t in args.type} if args.type else None
     if types and types - set(RELEASE_TYPES):
         parser.error(
             f"unknown release type: {', '.join(sorted(types - set(RELEASE_TYPES)))} (use {', '.join(RELEASE_TYPES)})"
         )
 
+    today = datetime.date.today().isoformat()
     history = load_history()
-    skip = history.get(args.user.lower(), [])[-args.no_repeat :] if args.no_repeat else ()
+    entries = history.get(args.user.lower(), [])
+    if args.daily:
+        # Only skip picks from before today, so the release of the day stays the same all day.
+        entries = [e for e in entries if e.get("picked", "") < today]
+    skip = [e["url"] for e in entries[-args.no_repeat :]] if args.no_repeat else ()
+    if args.daily:
+        random.seed(f"daily {args.user.lower()} {today}")
+    elif args.seed is not None:
+        random.seed(args.seed)
+    seeded = args.daily or args.seed is not None
     if args.tag:
         # Tag pages can't be limited to a rating range, so the range is checked
         # on each release instead.
@@ -529,28 +663,26 @@ def main():
     else:
         url = f"{BASE}/collection/{args.user}/r{args.min:.1f}-{args.max:.1f}"
         min_rating = max_rating = None
-    match = filters(types, args.year_from, args.year_to, min_rating, max_rating, skip)
+    match = filters(types, args.year_from, args.year_to, min_rating, max_rating, skip, rated_from, rated_to)
+    weight = (lambda release: rating_weight(release, args.max)) if args.weighted else None
 
     fetcher = Fetcher(headless=not args.show)
-    collection = Collection(fetcher, url, args.refresh)
     try:
-        first = collection.page(1)
-        if first is None:
-            what = f"releases tagged '{args.tag}' by" if args.tag else "the collection of"
-            sys.exit(f"Couldn't find {what} '{args.user}' (wrong username, wrong tag or private collection?).")
-        if not first[0]:
-            sys.exit("The collection is empty for that rating range.")
-        if args.other_user:
-            picked = pick_shared(fetcher, collection, args, match)
-            searched_all = True
+        if args.new_from:
+            picked, searched_all = pick_new(fetcher, args, match, weight, seeded)
         else:
-            picked, searched_all = pick(
-                collection,
-                args.count,
-                match,
-                (lambda release: rating_weight(release, args.max)) if args.weighted else None,
-                args.max_pages,
-            )
+            collection = Collection(fetcher, url, args.refresh)
+            first = collection.page(1)
+            if first is None:
+                what = f"releases tagged '{args.tag}' by" if args.tag else "the collection of"
+                sys.exit(f"Couldn't find {what} '{args.user}' (wrong username, wrong tag or private collection?).")
+            if not first[0]:
+                sys.exit("The collection is empty for that rating range.")
+            if args.other_user:
+                picked = pick_shared(fetcher, collection, args, match)
+                searched_all = True
+            else:
+                picked, searched_all = pick(collection, args.count, match, weight, args.max_pages, seeded)
     finally:
         fetcher.close()
 
@@ -574,10 +706,15 @@ def main():
             reason = (
                 f"No release rated by both '{args.user}' and '{args.other_user}' in that range matches the filters."
             )
+        if not picked and args.new_from and searched_all:
+            reason = (
+                f"No release rated by '{args.new_from}' in that range and not rated by '{args.user}' "
+                "matches the filters."
+            )
         if not picked:
             sys.exit(reason)
         print(reason, file=sys.stderr)
-    save_history(history, args.user, picked)
+    save_history(history, args.user, picked, today)
 
     if args.json:
         output = [dict(r, type=release_type(r), **({"links": search_links(r)} if args.links else {})) for r in picked]
@@ -611,6 +748,44 @@ def pick_shared(fetcher, collection, args, match):
         )
     shared = [r for r in shared_releases(mine, theirs, args.other_user) if match(r)]
     return choose(shared, args.count, shared_weight if args.weighted else None)
+
+
+def pick_new(fetcher, args, match, weight, stable):
+    """Pick releases that args.new_from rated in the range and args.user hasn't rated.
+
+    The user's whole collection is needed to know what they rated, so it's read
+    first, loading at most --max-pages pages per run and keeping them for
+    OWN_COLLECTION_TTL; when it needs more, it exits and the next run goes on.
+    Then the other user's collection is sampled like with pick().
+    """
+    theirs = Collection(fetcher, f"{BASE}/collection/{args.new_from}/r{args.min:.1f}-{args.max:.1f}", args.refresh)
+    first = theirs.page(1)
+    if first is None:
+        sys.exit(f"Couldn't find the collection of '{args.new_from}' (wrong username or private collection?).")
+    if not first[0]:
+        sys.exit(f"'{args.new_from}' hasn't rated any release in that rating range.")
+    mine = Collection(fetcher, f"{BASE}/collection/{args.user}/r0.5-5.0", args.refresh, OWN_COLLECTION_TTL)
+    if mine.page(1) is None:
+        sys.exit(f"Couldn't find the collection of '{args.user}' (wrong username or private collection?).")
+    rated, used, done = all_rows(mine, args.max_pages)
+    if not done:
+        sys.exit(
+            f"Loaded {used} more pages of the collection of '{args.user}', but it has more. Run the same command "
+            "again in a while to go on (the pages of your collection are saved for 7 days)."
+        )
+    rated_urls = {r["url"] for r in rated}
+    picked, searched_all = pick(
+        theirs, args.count, lambda r: r["url"] not in rated_urls and match(r), weight, args.max_pages - used, stable
+    )
+    return [dict(r, rated_by=args.new_from) for r in picked], searched_all
+
+
+def show_history(user, count, as_json):
+    """Print the last `count` releases picked for the user, oldest first."""
+    entries = load_history().get(user.lower(), [])[-count:]
+    if not entries:
+        sys.exit(f"No releases picked for '{user}' yet.")
+    print(json.dumps(entries, ensure_ascii=False, indent=2) if as_json else format_history(entries))
 
 
 if __name__ == "__main__":
