@@ -4,7 +4,9 @@
 <div align="center">
   <img src="assets/icon.svg" alt="rymspin icon" width="128" height="128" />
   <h1 align="center">rymspin</h1>
-  <p align="center">Can't decide what to spin next? A command-line tool that picks a random release from the ones a <a href="https://rateyourmusic.com">Rate Your Music</a> user has rated.</p>
+  <p align="center">
+    Can't decide what to play next? This command-line tool picks a random release from those rated by a <a href="https://rateyourmusic.com">Rate Your Music</a> user.
+  </p>
   <p>
     <a href="https://github.com/HenestrosaDev/rymspin/actions/workflows/ci.yml">
       <img
