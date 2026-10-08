@@ -20,10 +20,10 @@ Issues = "https://github.com/HenestrosaDev/rymspin/issues"
 dev = ["pytest", "ruff", "mypy", "pre-commit"]
 
 [project.scripts]
-rymspin = "rymspin:main"
+rymspin = "rymspin.cli:main"
 
 [tool.setuptools]
-py-modules = ["rymspin"]
+packages = ["rymspin"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -38,7 +38,7 @@ select = ["E", "W", "F", "I", "UP", "B", "SIM", "C4", "RUF"]
 
 [tool.mypy]
 python_version = "3.10"
-files = ["rymspin.py", "tests"]
+files = ["rymspin", "tests"]
 warn_unused_ignores = true
 warn_redundant_casts = true
 check_untyped_defs = true
